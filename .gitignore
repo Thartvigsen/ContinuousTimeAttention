@@ -1,0 +1,12 @@
+env/
+env2/
+env3/
+mimic3-benchmarks/
+ref_results/
+data/
+*.pyc
+slurm-*
+log/
+*.npy
+.nfs*
+*.csv
