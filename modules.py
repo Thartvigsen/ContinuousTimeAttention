@@ -201,6 +201,87 @@ class Discriminator(nn.Module):
         logits = self.out(hidden[-1])
         return logits
 
+class LinearInterpolator(object):
+    def __init__(self):
+        pass
+    
+    def forward(self, t, v, r):
+        v, t = v.numpy(), t.numpy()
+        f = interpolate.interp1d(t, v, fill_value=(v[0], v[-1]), bounds_error=False)
+        v_new = f(r.numpy())
+        return torch.from_numpy(v_new).float()
+    
+class MVGlimpseNetwork(nn.Module):
+    def __init__(self, ninp, nhid, ngran, nglimpse, gwidth, gtype="flatten"):
+        super(MVGlimpseNetwork, self).__init__()
+        self.ngran = ngran
+        self.nglimpse = nglimpse
+        self.gwidth = gwidth
+#         self.Interpolator = Interpolator(ninp, a=200) # Bigger alpha means sharper
+        self.Interpolator = LinearInterpolator()
+        self.gtype = gtype
+
+        self.fc = nn.Linear(ninp*ngran*nglimpse+1, nhid) # Assume Flattened input
+
+    def getGlimpseTimesteps(self, l_t):
+        lin = []
+        for i in range(0, self.ngran):
+            lin.append(torch.linspace(-self.gwidth*((i*5)+10)/2., self.gwidth*((i*5)+10)/2., self.nglimpse))
+        lin = torch.stack(lin).transpose(0, 1)
+        return lin + l_t
+
+    def glimpseSensor(self, timesteps, values, l_t):
+        ref_steps = self.getGlimpseTimesteps(l_t)
+        self.r = ref_steps
+        all_glimpses = []
+        self.ref_steps = ref_steps
+        for G in range(self.ngran):
+            self.t = timesteps
+            self.v = values
+            glimpse = self.Interpolator.forward(timesteps, values, ref_steps[:, G])
+            self.g = glimpse
+            all_glimpses.append(glimpse)
+        glimpses = torch.stack(all_glimpses).reshape(1, -1)
+        return glimpses
+
+    def denormalize(self, T, l_t):
+        return ((0.5*(l_t + 1.0))*T)
+    
+    def forward(self, data, l_t):
+        # Input: Values, masks, lengths, reference timesteps
+        vals, time, masks, lengths = data
+        B, T, V = vals.shape
+        glimpses = []
+        for b in range(B):
+            b_glimpses = []
+            for v in range(0, V): # Chop off timesteps
+                vals_i = vals[b]
+                time_i = time[b]
+                masks_i = masks[b]
+                l = self.denormalize(time_i.max(0)[0], l_t[b]) # Make l_t in proper range
+
+                val_sum = len(torch.nonzero(masks_i[:, v]))
+                if val_sum > 1:
+                    v_in = vals_i[masks_i[:, v] == 1, v]
+                    t_in = time_i[masks_i[:, v] == 1]
+                    glimpse = self.glimpseSensor(t_in, v_in, l)
+                    if len(glimpse.shape) > 3:
+                        glimpse = glimpse.squeeze()
+                elif val_sum == 1:
+                    # Just return the value
+                    glimpse = torch.ones(1, self.nglimpse*self.ngran)*torch.unique(vals_i[masks_i[:, v]==1, v]).float()
+                else: # Variable is totally missing
+                    # Variable is totally missing
+                    glimpse = torch.zeros(1, self.nglimpse*self.ngran)
+                b_glimpses.append(glimpse)
+            b_glimpses = torch.stack(b_glimpses).squeeze()
+            glimpses.append(b_glimpses)
+        glimpses = torch.stack(glimpses)
+        g = glimpses.reshape(B, -1)
+        self.fglimpse = g
+        grep = self.fc(torch.cat((g, l_t), dim=1))
+        return grep, g[:, g.shape[1]//2]
+
 #class Controller(nn.Module):
 #    """Look at hidden state and decide where to move the sensor"""
 #    def __init__(self, ninp, std):

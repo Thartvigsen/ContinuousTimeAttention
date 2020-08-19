@@ -27,7 +27,7 @@ class ExpConfig():
     evaluate results, and write them into logging files
     """
 
-    def __init__(self, d, m, e, config, data_setting, iteration):
+    def __init__(self, d, m, e, config, iteration=0):
         # --- load model pieces ---
         self.dataset = d
         self.model = m
@@ -47,15 +47,15 @@ class ExpConfig():
         self.split_props = config["training"]["split_props"]
 
         # --- CUDA ---
-        if torch.cuda.is_available():
-            device = torch.device("cuda")
-        else:
-            device = torch.device("cpu")
+        #if torch.cuda.is_available():
+        #    device = torch.device("cuda")
+        #else:
+        #    device = torch.device("cpu")
 
-        self.model.setDevice(device)
-        self.model = self.model.to(device)
-        self.dataset.data = self.dataset.data.to(device)
-        self.dataset.labels = self.dataset.labels.to(device)
+        #self.model.setDevice(device)
+        #self.model = self.model.to(device)
+        #self.dataset.data = self.dataset.data.to(device)
+        #self.dataset.labels = self.dataset.labels.to(device)
 
         # --- build directories for logging ---
         self.LOG_PATH = self.setLogPath()
@@ -83,11 +83,12 @@ class ExpConfig():
 
         # --- set optimizer ---
         self.optimizer = self.getOptimizer(self.model, self.optimizer_name)
+        self.scheduler = None
         if self.SCHEDULE_LR:
             self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer,
                                                               gamma=self._GAMMA)
 
-    def getSplitIndex(self, regen=False):
+    def getSplitIndex(self, regen=False, save=False):
         """Choosing which examples are used
         for training, development, and testing
 
@@ -107,19 +108,21 @@ class ExpConfig():
 
         if regen: # Want new indices
             # --- save indices ---
-            np.save(self.dataset._load_path + "train_ix.npy", np.array(train_ix))
-            np.save(self.dataset._load_path + "val_ix.npy", np.array(val_ix))
-            np.save(self.dataset._load_path + "test_ix.npy", np.array(test_ix))
+            if save:
+                np.save(self.dataset._load_path + "train_ix.npy", np.array(train_ix))
+                np.save(self.dataset._load_path + "val_ix.npy", np.array(val_ix))
+                np.save(self.dataset._load_path + "test_ix.npy", np.array(test_ix))
         else: # Want to load old indices
             try:
                 train_ix = np.load(self.dataset._load_path + "train_ix.npy")
                 val_ix = np.load(self.dataset._load_path + "val_ix.npy")
                 test_ix = np.load(self.dataset._load_path + "test_ix.npy")
             except:
-                # --- save indices ---
-                np.save(self.dataset._load_path + "train_ix.npy", np.array(train_ix))
-                np.save(self.dataset._load_path + "val_ix.npy", np.array(val_ix))
-                np.save(self.dataset._load_path + "test_ix.npy", np.array(test_ix))
+                if save:
+                    # --- save indices ---
+                    np.save(self.dataset._load_path + "train_ix.npy", np.array(train_ix))
+                    np.save(self.dataset._load_path + "val_ix.npy", np.array(val_ix))
+                    np.save(self.dataset._load_path + "test_ix.npy", np.array(test_ix))
         return train_ix, val_ix, test_ix
 
     def getLoaders(self, dataset):
@@ -310,8 +313,8 @@ class ExpConfig():
         count = 0
         class_means = []
         for i, (X, y) in enumerate(loader):
-            gc.collect()
-            X = torch.transpose(X, 0, 1) # Sequence first for RNN
+            #gc.collect()
+            #X = torch.transpose(X, 0, 1) # Sequence first for RNN
             logits = model(X, epoch=epoch, test=test)
             loss = model.computeLoss(logits, y)
             total_loss += loss.item()
@@ -330,7 +333,7 @@ class ExpConfig():
 
         if scheduler:
             scheduler.step()
-        else:
+        if not optimizer:
             class_means = torch.stack(class_means).mean(0).detach().numpy()
         total_loss = total_loss/len(loader)
         predictions = torch.stack(predictions).squeeze().detach().numpy()#.transpose(0, 1)

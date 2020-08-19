@@ -387,6 +387,8 @@ class InHospitalMortality(Dataset):
         count = 0
         X = []
         y = []
+        t = []
+        m = []
         for i in indices:
             x = reader.read_example(i)
             try:
@@ -397,11 +399,11 @@ class InHospitalMortality(Dataset):
                     if df[name].dtype != np.number:
                         df[name] = df[name].str.extract('(\d+)')
                 df = np.array(df).astype(np.float32)
-            X.append(df)
+            t.append(df.iloc[:, 0])
+            X.append(df.iloc[:, 1:])
+            m.append(~np.isnan(df.iloc[:, 1:])) # Save the elements that are not missing!
             y.append(x["y"])
-        #X = np.stack(X).squeeze()
-        #y = np.stack(y).squeeze()
-        return X, y, len(indices)
+        return X, t, m, y, len(indices)
 
     def loadData(self):
         # Load all train files, load all test files, then concatenate and index
@@ -414,12 +416,12 @@ class InHospitalMortality(Dataset):
             self.test_ix = np.load(self._load_path+"test_ix.npy")
 
         else: # Regenerate everything, then save it
-            X_train, y_train, count_train = self.collectData(self._train_path, self.train_reader) 
+            vals_train, time_train, mask_train, y_train, count_train = self.collectData(self._train_path, self.train_reader) 
             self.train_ix = np.random.choice(np.arange(count_train), int(count_train*0.8), replace=False)
             self.val_ix = list(set(np.arange(count_train)) - set(self.train_ix))
 
             # Test
-            X_test, y_test, count_test = self.collectData(self._test_path, self.test_reader)
+            vals_test, time_test, mask_test, y_test, count_test = self.collectData(self._test_path, self.test_reader)
             self.test_ix = np.arange(count_test)+count_train
 
             X = X_train + X_test
@@ -432,3 +434,47 @@ class InHospitalMortality(Dataset):
             np.save(self._load_path+"val_ix.npy", self.val_ix)
             np.save(self._load_path+"test_ix.npy", self.test_ix)
         return X, y
+
+class MVSynth(Dataset):
+    def __init__(self):
+        super(MVSynth, self).__init__()
+        self.NAME = "MVSynth"
+        self.N = 500
+        self.max_num_obs = 20
+        self.H_max = 48
+        self.nvariables = 2
+        self._load_path = self._data_path + "MVSynth/"
+        self.values, self.timesteps, self.labels, self.masks, self.lengths = self.loadData()
+        #self.data = torch.stack([self.values, self.timesteps.unsqueeze(2).expand_as(self.masks), self.masks])
+        self.data_setting["N_FEATURES"] = 2
+        self.data_setting["N_CLASSES"] = 2
+        
+    def __getitem__(self, ix):
+        #return self.data[ix], self.labels[ix]
+        return (self.values[ix], self.timesteps[ix], self.masks[ix], self.lengths[ix]), self.labels[ix]
+        
+    def __len__(self):
+        return len(self.labels)
+    
+    def loadData(self):
+        labels = np.concatenate((np.zeros(self.N//2), np.ones(self.N//2)))
+        timesteps = np.linspace(0, self.H_max, self.max_num_obs)[:, None].repeat(self.N, 1).T
+        v1 = np.linspace(0, self.H_max, self.max_num_obs)[:, None].repeat(self.N, 1).T/self.H_max
+        v2 = 1-np.linspace(0, self.H_max, self.max_num_obs)[:, None].repeat(self.N, 1).T/self.H_max
+        values = np.transpose(np.array([v1, v2]), (1, 2, 0))
+        masks = np.random.binomial(1, p=[0.4], size=values.shape)
+        values = values*masks
+        values[:self.N//2] = np.abs(1-values[:self.N//2]) # Flip classes
+        lengths = np.random.randint(0, self.max_num_obs, self.N)
+
+        for n in range(self.N):
+            l = lengths[n]
+            values[n, l:] = 0.0
+            masks[n, l:] = 0.0
+            
+        values = torch.tensor(values, dtype=torch.float)
+        timesteps = torch.tensor(timesteps, dtype=torch.float)
+        labels = torch.tensor(labels, dtype=torch.long)
+        masks = torch.tensor(masks, dtype=torch.float)
+        lengths = torch.tensor(lengths, dtype=torch.float)
+        return values, timesteps, labels, masks, lengths

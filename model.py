@@ -67,23 +67,6 @@ class Model(nn.Module):
         loss = criterion.forward(pred, label)
         return loss
 
-    def initHidden(self, bsz):
-        """Initialize hidden weights."""
-        if self.CELL_TYPE == "LSTM":
-            h = (torch.zeros(self.nlayers,
-                             bsz,
-                             self.nhid),
-                 torch.zeros(self.nlayers,
-                             self._BATCH_SIZE,
-                             self.nhid))
-        else:
-            h = torch.zeros(self.nlayers,
-                            bsz,
-                            self.nhid)
-        if self._CUDA:
-            h = h.cuda()
-        return h
-
 class RNN(Model):
     def __init__(self, config, data_setting):
         """
@@ -137,18 +120,20 @@ class CAT(Model):
         self.nemb = nemb # Dimensions into which to embed the [glimpse, location] info
         self.std = std
         self.epsilons = exponentialDecay(self._nepoch)
+        self._bsz = config["training"]["batch_size"]
         
         # --- Mappings ---
         self.Controller = Controller(self.nhid, self.std)
         self.BaselineNetwork = BaselineNetwork(self.nhid, 1)
-        self.GlimpseNetwork = GlimpseNetwork(self._ninp, self.nemb,
+        self.GlimpseNetwork = MVGlimpseNetwork(self._ninp, self.nemb,
                                              self.ngranularity, self.nsample,
                                              self.gwidth)
         self.RNN = torch.nn.LSTM(self.nemb, self.nhid, self.nlayers)
         self.predict = torch.nn.Linear(self.nhid, self._nclasses)
 
     def forward(self, data, epoch, test):
-        timesteps, values = data
+        #values, timesteps, masks, lengths = data
+        #timesteps, values = data
 #         if test:
 #             self.Controller.std = 0.05
 #         else:
@@ -156,9 +141,11 @@ class CAT(Model):
 #             pass
 # #             self.Controller.std = 0.3
             
-        timesteps = timesteps.transpose(0, 1)
-        values = values.transpose(0, 1)
-        T, B, V = timesteps.shape
+        #timesteps = timesteps.transpose(0, 1) # MAYBE
+        #values = values.transpose(0, 1)
+        #print(timesteps.shape)
+        #print(values.shape)
+        #T, B, V = values.shape
         self.means = torch.zeros((self._nclasses, self.nref)) # For saving class-wise means
         baselines = [] # Predicted baselines
         reference_timesteps = [] # Which classes to halt at each step
@@ -166,14 +153,15 @@ class CAT(Model):
         glimpses = []
         
         # --- initial glimpse ---
-        l_t = torch.FloatTensor(B, 1).uniform_(0, 1)
+        l_t = torch.FloatTensor(self._bsz, 1).uniform_(0, 1)
         l_t.requires_grad = False
-        hidden = self.initHidden(B)
+        hidden = self.initHidden(self._bsz)
         reference_timesteps.append(l_t.squeeze())
 
         self.greps = []
         for i in range(self.nref+1):
-            out, hidden, log_probs, l_t, b_t, glimpse = self.CATCell(timesteps, values, hidden, l_t)
+            #out, hidden, log_probs, l_t, b_t, glimpse = self.CATCell(timesteps, values, hidden, l_t)
+            out, hidden, log_probs, l_t, b_t, glimpse = self.CATCell(data, hidden, l_t)
             log_pi.append(log_probs)
             baselines.append(b_t)
             reference_timesteps.append(l_t.squeeze())
@@ -187,8 +175,10 @@ class CAT(Model):
         logits = self.predict(out.squeeze())
         return logits
     
-    def CATCell(self, timesteps, values, h_prev, l):
-        grep, glimpse = self.GlimpseNetwork(timesteps, values, l)
+    #def CATCell(self, timesteps, values, h_prev, l):
+    def CATCell(self, data, h_prev, l):
+        #grep, glimpse = self.GlimpseNetwork(values, timesteps, masks, lengths, l)
+        grep, glimpse = self.GlimpseNetwork(data, l)
         out, hidden = self.RNN(grep.unsqueeze(0), h_prev)
         self.greps.append(out)
         log_probs, l_next = self.Controller(out)

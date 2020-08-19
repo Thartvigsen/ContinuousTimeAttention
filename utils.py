@@ -25,7 +25,8 @@ class MainWriter(object):
         # --- set experimental configs ---
         self.datasets = [
             #"""PhysioNet()""",
-            """UWave()""",
+            #"""UWave()""",
+            """InHospitalMortality()""",
         ]
 
         self.metrics = """[Accuracy()]"""
@@ -33,10 +34,10 @@ class MainWriter(object):
         self.models = [
             #"""Interpolator(config, d.data_setting, adapter="linear", nref=10)""",
             #"""Interpolator(config, d.data_setting, adapter="linear", nref=140)""",
-            """Interpolator(config, d.data_setting, adapter="gaussian", nref=10)""",
+            #"""Interpolator(config, d.data_setting, adapter="gaussian", nref=10)""",
             #"""Interpolator(config, d.data_setting, adapter="gaussian", nref=140)""",
             """CAT(config, d.data_setting, nref=10)""",
-            """PolicyFree(config, d.data_setting, nref=10)""",
+            #"""PolicyFree(config, d.data_setting, nref=10)""",
         ]
 
         self.n_iterations = 5
