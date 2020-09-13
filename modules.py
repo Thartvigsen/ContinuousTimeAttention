@@ -3,6 +3,7 @@ import numpy as np
 from torch.distributions import Normal
 import torch
 from scipy import interpolate
+from utils import RegularGridInterpolator
 
 class Controller(nn.Module):
     """Look at hidden state and decide where to move the sensor"""
@@ -16,6 +17,7 @@ class Controller(nn.Module):
         self.fc2 = nn.Linear(nemb, 1)
         
     def forward(self, h_t):
+        #print("H: ", h_t)
         feat = torch.relu(self.fc1(h_t.squeeze(0)))
         self.mu = torch.sigmoid(self.fc2(feat))
         distribution = Normal(self.mu, self.std)
@@ -225,13 +227,24 @@ class MVGlimpseNetwork(nn.Module):
 
     def getGlimpseTimesteps(self, l_t):
         lin = []
-        for i in range(0, self.ngran):
-            lin.append(torch.linspace(-self.gwidth*((i*5)+10)/2., self.gwidth*((i*5)+10)/2., self.nglimpse))
+        for i in [1, 5]:
+            lin.append(torch.linspace(-self.gwidth*i/2., self.gwidth*i/2., self.nglimpse))
         lin = torch.stack(lin).transpose(0, 1)
         return lin + l_t
 
+    def MVGlimpseSensor(self, t, v, m, r):
+        new_vals = []
+        for V in range(v.shape[1]):
+            time = [t[m[:, V] == 1].squeeze()]
+            vals = v[m[:, V] == 1, V]
+            GI = RegularGridInterpolator(time, vals)
+            new_vals.append(GI(r))
+        new_vals = torch.stack(new_vals)
+        return new_vals.T
+
     def glimpseSensor(self, timesteps, values, l_t):
         ref_steps = self.getGlimpseTimesteps(l_t)
+        ref_steps = self.denormalize(timesteps.max(0)[0], ref_steps) # Make l_t in proper range
         self.r = ref_steps
         all_glimpses = []
         self.ref_steps = ref_steps
@@ -245,7 +258,8 @@ class MVGlimpseNetwork(nn.Module):
         return glimpses
 
     def denormalize(self, T, l_t):
-        return ((0.5*(l_t + 1.0))*T)
+        return l_t*T
+        #return ((0.5*(l_t + 1.0))*T)
     
     def forward(self, data, l_t):
         # Input: Values, masks, lengths, reference timesteps
@@ -254,30 +268,57 @@ class MVGlimpseNetwork(nn.Module):
         glimpses = []
         for b in range(B):
             b_glimpses = []
+            vals_i = vals[b]
+            time_i = time[b]
+            masks_i = masks[b]
+            l = l_t[b]
             for v in range(0, V): # Chop off timesteps
-                vals_i = vals[b]
-                time_i = time[b]
-                masks_i = masks[b]
-                l = self.denormalize(time_i.max(0)[0], l_t[b]) # Make l_t in proper range
+                #l = self.denormalize(time_i.max(0)[0], l_t[b]) # Make l_t in proper range
 
-                val_sum = len(torch.nonzero(masks_i[:, v]))
-                if val_sum > 1:
+                #print(torch.nonzero(masks_i[:, v]))
+                #val_sum = len(torch.nonzero(masks_i[:, v]))
+                #v_in = vals_i[masks_i[:, v] == 1, v]
+                #t_in = time_i[masks_i[:, v] == 1]
+                num_vals = masks_i[:, v].sum()
+                if num_vals > 1:
+                    #print("2+VAL")
                     v_in = vals_i[masks_i[:, v] == 1, v]
                     t_in = time_i[masks_i[:, v] == 1]
+                    #print("value sum: ", v_in.sum())
+                    #print("time sum: ", t_in.sum())
                     glimpse = self.glimpseSensor(t_in, v_in, l)
+                    #print("inner glimpse sum: ", glimpse.sum())
                     if len(glimpse.shape) > 3:
                         glimpse = glimpse.squeeze()
-                elif val_sum == 1:
+                elif num_vals == 1:
                     # Just return the value
+                    #print("1VAL")
                     glimpse = torch.ones(1, self.nglimpse*self.ngran)*torch.unique(vals_i[masks_i[:, v]==1, v]).float()
                 else: # Variable is totally missing
                     # Variable is totally missing
+                    #print("ELSE")
                     glimpse = torch.zeros(1, self.nglimpse*self.ngran)
+                #print("Glimpse sum: ", glimpse.sum())
+                #if torch.isnan(glimpse.sum()):
+                    #print(masks_i[:, v])
+                    #print(vals_i[:, v])
+                    #print(time_i)
+                    #print(v_in)
+                    #print(t_in)
+                    #print("num vals: ", num_vals)
+                    #print("value sum: ", v_in.sum())
+                    #print("time sum: ", t_in.sum())
+                    #assert 2 == 3
                 b_glimpses.append(glimpse)
+            #assert 2 == 3
             b_glimpses = torch.stack(b_glimpses).squeeze()
             glimpses.append(b_glimpses)
         glimpses = torch.stack(glimpses)
         g = glimpses.reshape(B, -1)
+        #print("sum g: ", g.sum(1))
+        #print("g: ", g)
+        #print("l_t: ", l_t)
+        #print()
         self.fglimpse = g
         grep = self.fc(torch.cat((g, l_t), dim=1))
         return grep, g[:, g.shape[1]//2]

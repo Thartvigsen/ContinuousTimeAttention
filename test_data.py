@@ -1,4 +1,4 @@
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import torch
 from modules import *
 from dataset import *
@@ -38,8 +38,8 @@ config = {
     },
 }
 
-#d = InHospitalMortality()
-d = MVSynth()
+d = InHospitalMortality()
+#d = MVSynth()
 M = CAT(config, d.data_setting, ngran=10)
 e = [Accuracy()]
 E = ExpConfig(d, M, e, config)

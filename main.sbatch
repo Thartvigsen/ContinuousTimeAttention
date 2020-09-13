@@ -2,7 +2,7 @@
 #SBATCH -p short
 #SBATCH -N 1                      # number of nodes
 #SBATCH -n 4                      # number of cores
-#SBATCH --mem=30GB                # memory pool for all cores
+#SBATCH --mem=10GB                # memory pool for all cores
 #SBATCH -t 0-24:00                # time (D-HH:MM)
 ##SBATCH --exclude=compute-0-01
 #SBATCH --checkpoint=5

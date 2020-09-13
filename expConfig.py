@@ -271,6 +271,7 @@ class ExpConfig():
     def writeFileHeaders(self):
         if not os.path.exists(self.LOG_PATH+"train_results_{}.csv".format(self.iter)):
             row = ["Loss"]
+            #row = ["C Loss", "R Loss"]
             for metric in self.metrics: # Add metric names to csv headers
                 row.append(metric.name)
 
@@ -300,30 +301,48 @@ class ExpConfig():
 
             # Validate and Test model
             #self.runEpoch(self.model, self.val_loader, "val")
+
             self.runEpoch(self.model, self.test_loader, "test")
             end = time.time()
             print("Epoch {}/{} completed in {} minutes.".format(e+1, self.N_EPOCHS, np.round((end-start)/60., 3)))
+            assert 2 == 3
 
     def runEpoch(self, model, loader, mode, optimizer=None, scheduler=None, test=True, epoch=0):
         """Given a data loader and model, run through the dataset once."""
         predictions = []
         labels = []
+        reference_timesteps = []
         total_loss = 0
+        total_loss_c = 0
+        total_loss_r = 0
         correct = 0
         count = 0
         class_means = []
+        start2 = time.time()
         for i, (X, y) in enumerate(loader):
             #gc.collect()
             #X = torch.transpose(X, 0, 1) # Sequence first for RNN
+            print(i)
+            start2 = time.time()
             logits = model(X, epoch=epoch, test=test)
+            end2 = time.time()
+            print("Model took a total of {} minutes.".format(np.round((end2-start2)/60., 3)))
+            start2 = time.time()
             loss = model.computeLoss(logits, y)
+            end2 = time.time()
+            print("Loss took {} minutes.".format(np.round((end2-start2)/60., 3)))
+            #total_loss_c += model.loss_c.item()
             total_loss += loss.item()
+            #total_loss_r += model.loss_r.item()
+            #reference_timesteps.append(model.reference_timesteps)
             if optimizer:
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                #class_means.append(model.means)
             else:
-                class_means.append(model.means)
+                pass
+                #class_means.append(model.means)
 
             y_hat = torch.max(torch.softmax(logits, 1), 1)[1]
             correct += (y_hat == y).sum().item()
@@ -331,21 +350,34 @@ class ExpConfig():
             predictions.append(y_hat.detach())
             labels.append(y.detach())
 
+        end2 = time.time()
+        print("Training batches took {} minutes.".format(np.round((end2-start2)/60., 3)))
         if scheduler:
             scheduler.step()
+            #class_means = torch.stack(class_means).mean(0).detach().numpy()
+
         if not optimizer:
-            class_means = torch.stack(class_means).mean(0).detach().numpy()
+            pass
+            #class_means = torch.stack(class_means).mean(0).detach().numpy()
         total_loss = total_loss/len(loader)
+        #total_loss_c = total_loss_c/len(loader)
+        #total_loss_r = total_loss_r/len(loader)
         predictions = torch.stack(predictions).squeeze().detach().numpy()#.transpose(0, 1)
         predictions = predictions.reshape(-1, 1)
+        #reference_timesteps = torch.stack(reference_timesteps).squeeze().numpy()#.reshape(i+1, -1)
         labels = torch.stack(labels).squeeze().detach().numpy()
         labels = labels.reshape(-1, 1)
 
         # ---log results ---
         row = [total_loss]
-        #metrics = self.computeMetrics(predictions, labels)
-        #[row.append(metric) for metric in metrics]
-        row.append(np.round(100.*correct/count, 3))
+        #row = [total_loss_c, total_loss_r]
+        metrics = self.computeMetrics(predictions, labels)
+        [row.append(metric) for metric in metrics]
+        #row.append(np.round(100.*correct/count, 3))
         writeCSVRow(row, self.LOG_PATH+"{}_results_{}".format(mode, self.iter), round=True)
-        if test:
-            np.save(self.LOG_PATH+"class_means_{}".format(self.iter), class_means)
+        np.save(self.LOG_PATH+"{}_reference_timesteps_{}".format(mode, self.iter), reference_timesteps)
+        if not test:
+            try:
+                np.save(self.LOG_PATH+"class_means_{}".format(self.iter), class_means)
+            except:
+                pass

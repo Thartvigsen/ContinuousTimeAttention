@@ -9,6 +9,7 @@ import pandas as pd
 import re
 from readers import InHospitalMortalityReader, PhenotypingReader
 import time
+#from pyts.approximation import MultipleCoefficientBinning
 
 class Dataset(data.Dataset):
     """
@@ -367,73 +368,156 @@ class InHospitalMortality(Dataset):
         self._train_path = self._load_path + "train/"
         self._test_path = self._load_path + "test/"
         #self.timesteps, self.values, self.labels = self.loadData()
-        self.train_reader = InHospitalMortalityReader(self._train_path, period_length=48.0)
-        self.test_reader = InHospitalMortalityReader(self._test_path, period_length=48.0)
-        self.data, self.labels = self.loadData()
+        self._train_reader = InHospitalMortalityReader(self._train_path)
+        self._test_reader = InHospitalMortalityReader(self._test_path)
+        self._mean = False
+        self.R = 10
+        #self.data, self.labels = self.loadData()
+        self.values, self.timesteps, self.masks, self.labels, self.lengths = self.loadData()
+        print("Loaded data of shape {}".format(self.values.shape))
         self.data_setting["N_FEATURES"] = 17
         self.data_setting["N_CLASSES"] = 2
         end = time.time()
         print("preprocessing took {} minutes.".format(np.round((end-start)/60., 3)))
     
     def __getitem__(self, ix):
-        return self.data[ix], self.labels[ix]
+        return (self.values[ix], self.timesteps[ix], self.masks[ix], self.lengths[ix]), self.labels[ix]
+        #return self.data[ix], self.labels[ix]
     
     def __len__(self):
         return len(self.labels)
 
-    def collectData(self, load_path, reader):
-        #indices = self.getFilenames(listfile_path)
-        indices = range(len(os.listdir(load_path))-1)
+    def collectData(self, load_path, reader, train=True):
+        #indices = range(len(os.listdir(load_path))-1)
+        if train:
+            indices = np.arange(0, 5000)
+        else:
+            indices = np.arange(0, 1000)
         count = 0
-        X = []
+        values = []
         y = []
         t = []
         m = []
         for i in indices:
             x = reader.read_example(i)
-            try:
-                df = np.array(x).astype(np.float32)
-            except:
-                df = pd.DataFrame(x["X"])
-                for name in df.columns:
-                    if df[name].dtype != np.number:
-                        df[name] = df[name].str.extract('(\d+)')
-                df = np.array(df).astype(np.float32)
-            t.append(df.iloc[:, 0])
-            X.append(df.iloc[:, 1:])
-            m.append(~np.isnan(df.iloc[:, 1:])) # Save the elements that are not missing!
+            X = x["X"]
             y.append(x["y"])
-        return X, t, m, y, len(indices)
+            X[X == ""] = np.nan
+            X[X == "None"] = np.nan
+            for i in range(X.shape[0]):
+                for j in range(X.shape[1]):
+                    try:
+                        X[i, j] = X[i, j].astype(np.float32)
+                    except:
+                        try:
+                            v = np.array(re.findall(r'\d*\.?\d+', X[i, j]), dtype=np.float32).item()
+                        except: # No numbers?
+                            v = np.nan
+                        X[i, j] = v
+            X = X.astype(np.float32)
+            t.append(X[:, 0])
+            df = X[:, 1:]
+            df = (df-np.nanmean(df, 0))/np.nanstd(df, 0)
+            m.append(~np.isnan(df)) # Save the elements that are not missing!
 
-    def loadData(self):
-        # Load all train files, load all test files, then concatenate and index
-        # Train
-        if os.path.exists(self._load_path+"data.pt"):
-            X = torch.load(self._load_path+"data.pt")
-            y = torch.load(self._load_path+"labels.pt")
-            self.train_ix = np.load(self._load_path+"train_ix.npy")
-            self.val_ix = np.load(self._load_path+"val_ix.npy")
-            self.test_ix = np.load(self._load_path+"test_ix.npy")
+            # fill in mean for missing values
+            col_mean = np.nanmean(df, axis=0)
+            col_mean[np.isnan(col_mean)] = 0.0
+            inds = np.where(np.isnan(df))
+            df[inds] = np.take(col_mean, inds[1])
+            values.append(df)
+        return values, t, m, y, len(indices)
+    
+    def pad(self, x):
+        # X is a list, return a matrix of shape (len(x), max_len(items in x), -1)
+        lens = [len(i) for i in x]
+        maxlen = max(lens)
+        if len(x[0].shape) > 1:
+            out = np.zeros((len(x), maxlen, x[0].shape[-1]))
+            for i in range(len(x)):
+                out[i, :lens[i], :] = x[i]
+            out = out[:, :150, :] # Take only first 150 timesteps
+            #out = out[:, ::2, :] # Take every other value
+        else:
+            out = np.zeros((len(x), maxlen))
+            for i in range(len(x)):
+                out[i, :lens[i]] = x[i]
+            out = out[:, :150]
+            #out = out[:, ::2] # Take every other value
+        return out
 
+    def irregularMean(self, timesteps, values):
+        # Output: N x R x V
+        N = len(timesteps)
+        V = values[0].shape[1]
+        final_vals = np.zeros((N, self.R, V))
+        final_timesteps = np.zeros((N, self.R))
+        for n in range(N): # For each instance
+            ref_steps = np.linspace(timesteps[n].min(), timesteps[n].max(), self.R+1)
+            new_vals = np.zeros((self.R, V))
+            for i in range(self.R): # For each reference timestep
+                index = np.where(np.logical_and((timesteps[n] >= ref_steps[i]), (timesteps[n] < ref_steps[i+1])))
+                vals = np.mean(values[n][index], 0)
+                new_vals[i] = vals
+                # But some will have no means!
+            col_mean = np.nanmean(new_vals, axis=0)
+            col_mean[np.isnan(col_mean)] = 0.0
+            inds = np.where(np.isnan(new_vals))
+            new_vals[inds] = np.take(col_mean, inds[1])
+            final_vals[n] = new_vals
+            final_timesteps[n] = ref_steps[:-1]
+        return final_timesteps, final_vals
+
+    def loadData(self, regen=False):
+        if ((os.path.exists(self._load_path+"values.pt")) and not (regen)):
+            values = torch.load(self._load_path+"values_mean_{}.pt".format(self._mean))
+            masks = torch.load(self._load_path+"masks_mean_{}.pt".format(self._mean))
+            lengths = torch.load(self._load_path+"lengths_mean_{}.pt".format(self._mean))
+            timesteps = torch.load(self._load_path+"timesteps_mean_{}.pt".format(self._mean))
+            labels = torch.load(self._load_path+"labels_mean_{}.pt".format(self._mean))
+            self.train_ix = np.load(self._load_path+"train_ix_mean_{}.npy".format(self._mean))
+            self.val_ix = np.load(self._load_path+"val_ix_mean_{}.npy".format(self._mean))
+            self.test_ix = np.load(self._load_path+"test_ix_mean_{}.npy".format(self._mean))
         else: # Regenerate everything, then save it
-            vals_train, time_train, mask_train, y_train, count_train = self.collectData(self._train_path, self.train_reader) 
+            vals_train, time_train, mask_train, y_train, count_train = self.collectData(self._train_path, self._train_reader) 
             self.train_ix = np.random.choice(np.arange(count_train), int(count_train*0.8), replace=False)
             self.val_ix = list(set(np.arange(count_train)) - set(self.train_ix))
 
             # Test
-            vals_test, time_test, mask_test, y_test, count_test = self.collectData(self._test_path, self.test_reader)
+            vals_test, time_test, mask_test, y_test, count_test = self.collectData(self._test_path, self._test_reader, train=False)
             self.test_ix = np.arange(count_test)+count_train
 
-            X = X_train + X_test
-            y = y_train + y_test
+            values = vals_train + vals_test
+            timesteps = time_train + time_test
+            labels = y_train + y_test
+            masks = mask_train + mask_test
+            # Shape: N x T x V
+
+            # If we want to take the mean every R steps, then here we need to
+            # have some method for taking an evenly space sample from values
+            # and timesteps
+            if self._mean:
+                timesteps, values = self.irregularMean(timesteps, values)
+
+            # Choose if I want to downsample!
+
+            # Pad data and collect into tensors
+            lengths = torch.tensor([len(i) for i in values], dtype=torch.int)
+            values = torch.tensor(self.pad(values), dtype=torch.float)
+            masks = torch.tensor(self.pad(masks), dtype=torch.int)
+            timesteps = torch.tensor(self.pad(timesteps), dtype=torch.float)
+            labels = torch.tensor(labels, dtype=torch.long)
 
             # Save files
-            torch.save(X, self._load_path+"data.pt")
-            torch.save(y, self._load_path+"labels.pt")
-            np.save(self._load_path+"train_ix.npy", self.train_ix)
-            np.save(self._load_path+"val_ix.npy", self.val_ix)
-            np.save(self._load_path+"test_ix.npy", self.test_ix)
-        return X, y
+            torch.save(values, self._load_path+"values_mean_{}.pt".format(self._mean))
+            torch.save(masks, self._load_path+"masks_mean_{}.pt".format(self._mean))
+            torch.save(lengths, self._load_path+"lengths_mean_{}.pt".format(self._mean))
+            torch.save(timesteps, self._load_path+"timesteps_mean_{}.pt".format(self._mean))
+            torch.save(labels, self._load_path+"labels_mean_{}.pt".format(self._mean))
+            np.save(self._load_path+"train_ix_mean_{}.npy".format(self._mean), self.train_ix)
+            np.save(self._load_path+"val_ix_mean_{}.npy".format(self._mean), self.val_ix)
+            np.save(self._load_path+"test_ix_mean_{}.npy".format(self._mean), self.test_ix)
+        return values, timesteps, masks, labels, lengths
 
 class MVSynth(Dataset):
     def __init__(self):
