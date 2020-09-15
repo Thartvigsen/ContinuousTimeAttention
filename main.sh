@@ -11,8 +11,10 @@
 #srun --array=$1 main.sbatch
 
 # TURING
-export PYTHONPATH=../pytorchExp/env/bin/python
-source ../pytorchExp/env/bin/activate
+export PYTHONPATH=/home/twhartvigsen/work/env3/bin/python3
+source /home/twhartvigsen/work/env3/bin/activate
+#export PYTHONPATH=../pytorchExp/env/bin/python
+#source ../pytorchExp/env/bin/activate
 sbatch --array=$1 main.sbatch
 
 # LOCAL

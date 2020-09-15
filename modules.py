@@ -217,6 +217,7 @@ class MVGlimpseNetwork(nn.Module):
     def __init__(self, ninp, nhid, ngran, nglimpse, gwidth, gtype="flatten"):
         super(MVGlimpseNetwork, self).__init__()
         self.ngran = ngran
+    print(glimpse.shape)
         self.nglimpse = nglimpse
         self.gwidth = gwidth
 #         self.Interpolator = Interpolator(ninp, a=200) # Bigger alpha means sharper
@@ -225,22 +226,16 @@ class MVGlimpseNetwork(nn.Module):
 
         self.fc = nn.Linear(ninp*ngran*nglimpse+1, nhid) # Assume Flattened input
 
+    def denormalize(self, T, l_t):
+        return l_t*T
+        #return ((0.5*(l_t + 1.0))*T)
+
     def getGlimpseTimesteps(self, l_t):
         lin = []
         for i in [1, 5]:
             lin.append(torch.linspace(-self.gwidth*i/2., self.gwidth*i/2., self.nglimpse))
         lin = torch.stack(lin).transpose(0, 1)
         return lin + l_t
-
-    def MVGlimpseSensor(self, t, v, m, r):
-        new_vals = []
-        for V in range(v.shape[1]):
-            time = [t[m[:, V] == 1].squeeze()]
-            vals = v[m[:, V] == 1, V]
-            GI = RegularGridInterpolator(time, vals)
-            new_vals.append(GI(r))
-        new_vals = torch.stack(new_vals)
-        return new_vals.T
 
     def glimpseSensor(self, timesteps, values, l_t):
         ref_steps = self.getGlimpseTimesteps(l_t)
@@ -257,10 +252,34 @@ class MVGlimpseNetwork(nn.Module):
         glimpses = torch.stack(all_glimpses).reshape(1, -1)
         return glimpses
 
-    def denormalize(self, T, l_t):
-        return l_t*T
-        #return ((0.5*(l_t + 1.0))*T)
-    
+    def MVGlimpseSensor(self, t, v, m, r):
+        new_vals = []
+        for V in range(v.shape[1]):
+            num_vals = m[:, V].sum()
+            if num_vals > 1:
+                time = [t[m[:, V] == 1].squeeze()]
+                vals = v[m[:, V] == 1, V]
+                GI = RegularGridInterpolator(time, vals)
+                glimpse = GI([r])
+            elif num_vals == 1: # Variable has only 1 value
+                glimpse = torch.ones(1, self.nglimpse*self.ngran)*torch.unique(v[m[:, V]==1, v]).float()
+            else: # Variable is totally missing
+                glimpse = torch.zeros(1, self.nglimpse*self.ngran)
+            print(glimpse.shape)
+            new_vals.append(glimpse)
+        new_vals = torch.stack(new_vals)
+        return new_vals.T
+
+    def glimpseSensor2(self, t, v, m, l):
+        ref_steps = self.getGlimpseTimesteps(l)
+        ref_steps = self.denormalize(t.max(0)[0], ref_steps)
+        all_glimpses = []
+        for G in range(self.ngran):
+            glimpse = self.MVGlimpseSensor(t, v, m, ref_steps[:, G])
+            all_glimpses.append(glimpse)
+        glimpses = torch.stack(all_glimpses).reshape(1, -1)
+        return glimpses
+
     def forward(self, data, l_t):
         # Input: Values, masks, lengths, reference timesteps
         vals, time, masks, lengths = data
@@ -272,56 +291,148 @@ class MVGlimpseNetwork(nn.Module):
             time_i = time[b]
             masks_i = masks[b]
             l = l_t[b]
+            glimpses = self.glimpseSensor2(time_i, vals_i, masks_i, l)
+            assert 2 == 3
             for v in range(0, V): # Chop off timesteps
-                #l = self.denormalize(time_i.max(0)[0], l_t[b]) # Make l_t in proper range
-
-                #print(torch.nonzero(masks_i[:, v]))
-                #val_sum = len(torch.nonzero(masks_i[:, v]))
-                #v_in = vals_i[masks_i[:, v] == 1, v]
-                #t_in = time_i[masks_i[:, v] == 1]
+#                ref_steps = self.getGlimpseTimesteps(l_t)
+#                ref_steps = self.denormalize(timesteps.max(0)[0], ref_steps) # Make l_t in proper range
                 num_vals = masks_i[:, v].sum()
                 if num_vals > 1:
-                    #print("2+VAL")
                     v_in = vals_i[masks_i[:, v] == 1, v]
                     t_in = time_i[masks_i[:, v] == 1]
-                    #print("value sum: ", v_in.sum())
-                    #print("time sum: ", t_in.sum())
                     glimpse = self.glimpseSensor(t_in, v_in, l)
-                    #print("inner glimpse sum: ", glimpse.sum())
                     if len(glimpse.shape) > 3:
                         glimpse = glimpse.squeeze()
                 elif num_vals == 1:
-                    # Just return the value
-                    #print("1VAL")
                     glimpse = torch.ones(1, self.nglimpse*self.ngran)*torch.unique(vals_i[masks_i[:, v]==1, v]).float()
                 else: # Variable is totally missing
-                    # Variable is totally missing
-                    #print("ELSE")
                     glimpse = torch.zeros(1, self.nglimpse*self.ngran)
-                #print("Glimpse sum: ", glimpse.sum())
-                #if torch.isnan(glimpse.sum()):
-                    #print(masks_i[:, v])
-                    #print(vals_i[:, v])
-                    #print(time_i)
-                    #print(v_in)
-                    #print(t_in)
-                    #print("num vals: ", num_vals)
-                    #print("value sum: ", v_in.sum())
-                    #print("time sum: ", t_in.sum())
-                    #assert 2 == 3
                 b_glimpses.append(glimpse)
-            #assert 2 == 3
             b_glimpses = torch.stack(b_glimpses).squeeze()
             glimpses.append(b_glimpses)
         glimpses = torch.stack(glimpses)
         g = glimpses.reshape(B, -1)
-        #print("sum g: ", g.sum(1))
-        #print("g: ", g)
-        #print("l_t: ", l_t)
-        #print()
         self.fglimpse = g
         grep = self.fc(torch.cat((g, l_t), dim=1))
         return grep, g[:, g.shape[1]//2]
+
+class Retina(object):
+    def __init__(self, size, npatches, scaling_factor):
+        self.size = size
+        self.npatches = npatches
+        self.sf = scaling_factor
+
+    def denormalize(self, T, l_t):
+        return (l_t*T).long()
+
+    def extractPatch(self, x, l, size):
+        B, T, V = x.shape
+        start = denormalize(T, l)
+        end = start + size
+        x = F.pad(x, (0, 0, self.size // 2, self.size // 2))
+        patch = []
+        for b in range(B):
+            patch.append(x[b, int(start[b]):int(end[b]), :])
+        return torch.stack(patch)
+
+    def foveate(self, x, l):
+        B, T, V = x.shape
+
+        s2 = self.size
+        phi = []
+        for p in range(self.npatches):
+            phi.append(extractPatch(x, l, int(s2)))
+            s2 = self.sf*s2
+
+        for i in range(1, len(phi)):
+            k = phi[i].shape[1] // self.size
+            phi[i] = F.avg_pool1d(phi[i].transpose(1, 2), k).transpose(1, 2)
+
+        phi = torch.stack(phi).transpose(0, 1)
+        phi = phi.reshape(B, -1)
+        return phi
+
+class GN(nn.Module):
+    def __init__(self, ninp, nhid, size=10, npatches=2, scaling_factor=2):
+        super(GN, self).__init__()
+
+        self.Retina = Retina(size, npatches, scaling_factor)
+        self.fc1 = nn.Linear(npatches*size, nhid//2)
+        self.fc2 = nn.Linear(1, nhid//2)
+        self.fc3 = nn.Linear(nhid, nhid)
+
+    def forward(self, x, l_t):
+        phi = self.Retina.foveate(x, l_t)
+
+        phi_out = F.relu(self.fc1(phi))
+        l_out = F.relu(self.fc2(l_t))
+
+        g_t = F.relu(self.fc3(phi_out+l_out))
+        return g_t
+
+class GlimpseNetwork(nn.Module):
+    def __init__(self, ninp, nhid, ngran, nglimpse, gwidth, adapter="linear", gtype="flatten"):
+        super(GlimpseNetwork, self).__init__()
+        self.ngran = ngran
+        self.nglimpse = nglimpse
+        self.gwidth = gwidth
+        if adapter == "gaussian":
+            self.Interpolator = GaussianAdapter(self._ninp, a=200)
+        if adapter == "linear":
+            self.Interpolator = LinearInterpolator()
+        self.gtype = gtype
+        
+        # mappings
+        #self.fc = nn.Linear(ngran*nglimpse, nhid) # Assume Flattened input
+        self.fc = nn.Linear(ngran*nglimpse+1, nhid) # Assume Flattened input
+
+    def getGlimpseTimesteps(self, l_t):
+        lin = []
+        for i in range(0, self.ngran):
+            lin.append(torch.linspace(-self.gwidth*((i*5)+1)/2., self.gwidth*((i*5)+1)/2., self.nglimpse).unsqueeze(0).repeat(l_t.shape[0], 1))
+        lin = torch.stack(lin).transpose(0, 2)
+        return lin + l_t.unsqueeze(0)#.unsqueeze(2)
+    
+    def denormalize(self, T, l_t):
+#         print("T:", T.shape)
+#         print("l_t:", l_t.shape)
+        # Range [-1, 1] -> [0, T]
+        return ((0.5*(l_t + 1.0))*T)
+
+    def glimpseSensor(self, timesteps, values, l_t):
+        # timesteps is of shape [B x T x V]
+        timesteps = timesteps.transpose(0, 1)
+        values = values.transpose(0, 1)
+#         l_t = self.denormalize(timesteps.max(1)[0].max(1)[0].unsqueeze(1), l_t) # Make l_t in proper range
+        ref_steps = self.getGlimpseTimesteps(l_t) # T x B x NGRAN
+#         ref_steps = ref_steps.transpose(0, 1)[:, :, 0] # B x T x NGRAN
+        all_glimpses = []
+        self.ref_steps = ref_steps
+        for G in range(self.ngran):
+            self.t = timesteps
+            self.v = values
+            glimpse = self.Interpolator.forward(timesteps, values, ref_steps[:, :, G].transpose(0, 1))
+            all_glimpses.append(glimpse)
+        glimpses = torch.stack(all_glimpses).transpose(0, 2).transpose(0, 1)
+        # Each new value has been computed w.r.t. all old values
+        return glimpses
+
+    def RNNCell(self, x):
+        out, hidden = self.RNN(x)
+        return out[:, -1, :]
+    
+    def forward(self, timesteps, values, l_t):
+        glimpse = self.glimpseSensor(timesteps, values, l_t) # It collects 10 points centered around l_t (B x nglimpse)
+        if len(glimpse.shape) > 3:
+            glimpse = glimpse.squeeze()
+
+        self.glimpse = glimpse
+        g = glimpse.reshape(glimpse.shape[0], -1)
+        self.fglimpse = g
+        grep = self.fc(torch.cat((g, l_t), dim=1)) # SHOULD GLIMPSE OVER INDEP RESOLUTIONS, THEN WEIGHTED SUM REPS FROM SAME MAPPER?
+        #grep = self.fc(g) # SHOULD GLIMPSE OVER INDEP RESOLUTIONS, THEN WEIGHTED SUM REPS FROM SAME MAPPER?
+        return grep, g[:, g.shape[1]//2]#, glimpse.mean(-2).squeeze()
+
 
 #class Controller(nn.Module):
 #    """Look at hidden state and decide where to move the sensor"""

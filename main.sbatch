@@ -14,4 +14,6 @@
 ##SBATCH --mail-type=END
 ##SBATCH --mail-user=twhartvigsen@wpi.edu
 
+export PYTHONPATH=../pytorchExp/env3/bin/python
+source ../pytorchExp/env3/bin/activate
 python main.py --taskid=${SLURM_ARRAY_TASK_ID} #--num_gpu=1
