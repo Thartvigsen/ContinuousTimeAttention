@@ -3,7 +3,8 @@ import numpy as np
 from torch.distributions import Normal
 import torch
 from scipy import interpolate
-from utils import RegularGridInterpolator
+#from utils import RegularGridInterpolator
+import torch.nn.functional as F
 
 class Controller(nn.Module):
     """Look at hidden state and decide where to move the sensor"""
@@ -17,14 +18,15 @@ class Controller(nn.Module):
         self.fc2 = nn.Linear(nemb, 1)
         
     def forward(self, h_t):
-        #print("H: ", h_t)
         feat = torch.relu(self.fc1(h_t.squeeze(0)))
-        self.mu = torch.sigmoid(self.fc2(feat))
+        self.mu = torch.tanh(self.fc2(feat))
         distribution = Normal(self.mu, self.std)
         l_t = distribution.rsample()
         l_t = l_t.detach()
 
-        l_t = torch.clamp(l_t, 0, 1)
+        l_t = torch.clamp(l_t, -1, 1)
+        if torch.isnan(l_t).sum() > 0:
+            assert 2 == 3
         log_pi = distribution.log_prob(l_t)
         self.log_pi = log_pi
         return log_pi, l_t
@@ -186,7 +188,7 @@ class Discriminator(nn.Module):
         self.N_LAYERS = N_LAYERS
         
         # --- mappings ---
-        self.RNN = nn.LSTM(N_FEATURES, HIDDEN_DIMENSION)
+        self.RNN = nn.GRU(N_FEATURES, HIDDEN_DIMENSION)
         self.out = nn.Linear(HIDDEN_DIMENSION, N_CLASSES)
         
         # --- nonlinearities ---
@@ -195,29 +197,30 @@ class Discriminator(nn.Module):
     def forward(self, X):
         T, B, V = X.shape
         # --- initialize hidden state ---
-        state = (torch.zeros(self.N_LAYERS, B, self.HIDDEN_DIMENSION),
-                 torch.zeros(self.N_LAYERS, B, self.HIDDEN_DIMENSION))
+        #state = (torch.zeros(self.N_LAYERS, B, self.HIDDEN_DIMENSION),
+        #         torch.zeros(self.N_LAYERS, B, self.HIDDEN_DIMENSION))
+        state = torch.zeros(self.N_LAYERS, B, self.HIDDEN_DIMENSION)
         
         # --- inference ---
         hidden, state = self.RNN(X, state)
         logits = self.out(hidden[-1])
         return logits
 
-class LinearInterpolator(object):
-    def __init__(self):
-        pass
-    
-    def forward(self, t, v, r):
-        v, t = v.numpy(), t.numpy()
-        f = interpolate.interp1d(t, v, fill_value=(v[0], v[-1]), bounds_error=False)
-        v_new = f(r.numpy())
-        return torch.from_numpy(v_new).float()
+#class LinearInterpolator(object):
+#    def __init__(self):
+#        pass
+#    
+#    def forward(self, t, v, r):
+#        v, t = v.numpy(), t.numpy()
+#        f = interpolate.interp1d(t, v, fill_value=(v[0], v[-1]), bounds_error=False)
+#        v_new = f(r.numpy())
+#        return torch.from_numpy(v_new).float()
     
 class MVGlimpseNetwork(nn.Module):
     def __init__(self, ninp, nhid, ngran, nglimpse, gwidth, gtype="flatten"):
         super(MVGlimpseNetwork, self).__init__()
         self.ngran = ngran
-    print(glimpse.shape)
+        print(glimpse.shape)
         self.nglimpse = nglimpse
         self.gwidth = gwidth
 #         self.Interpolator = Interpolator(ninp, a=200) # Bigger alpha means sharper
@@ -323,13 +326,18 @@ class Retina(object):
         self.sf = scaling_factor
 
     def denormalize(self, T, l_t):
-        return (l_t*T).long()
+        #return (l_t*T).long()
+        return (0.5*((l_t+1.0)*T)).long()
 
     def extractPatch(self, x, l, size):
         B, T, V = x.shape
-        start = denormalize(T, l)
+        start = self.denormalize(T, l)
         end = start + size
-        x = F.pad(x, (0, 0, self.size // 2, self.size // 2))
+        #for b in range(B):
+        #    if start[b] < 0:
+        #        print(l)
+        #        assert 2 == 3
+        x = F.pad(x, (0, 0, size // 2, size // 2))
         patch = []
         for b in range(B):
             patch.append(x[b, int(start[b]):int(end[b]), :])
@@ -341,7 +349,7 @@ class Retina(object):
         s2 = self.size
         phi = []
         for p in range(self.npatches):
-            phi.append(extractPatch(x, l, int(s2)))
+            phi.append(self.extractPatch(x, l, int(s2)))
             s2 = self.sf*s2
 
         for i in range(1, len(phi)):
@@ -353,21 +361,39 @@ class Retina(object):
         return phi
 
 class GN(nn.Module):
-    def __init__(self, ninp, nhid, size=10, npatches=2, scaling_factor=2):
+    def __init__(self, ninp, nhid, size=10, npatches=2, scaling_factor=4, intensity=True):
         super(GN, self).__init__()
 
         self.Retina = Retina(size, npatches, scaling_factor)
-        self.fc1 = nn.Linear(npatches*size, nhid//2)
-        self.fc2 = nn.Linear(1, nhid//2)
-        self.fc3 = nn.Linear(nhid, nhid)
+        self.intensity = intensity
+
+        if self.intensity:
+            self.fc1 = nn.Linear(npatches*size*ninp, nhid)
+            self.fc2 = nn.Linear(1, nhid)
+            self.fc3 = nn.Linear(npatches*size*ninp, nhid)
+            self.fc4 = nn.Linear(nhid*3, nhid)
+        else:
+            self.fc1 = nn.Linear(npatches*size*ninp, nhid)
+            self.fc2 = nn.Linear(1, nhid)
+            self.fc4 = nn.Linear(nhid*2, nhid)
+
 
     def forward(self, x, l_t):
-        phi = self.Retina.foveate(x, l_t)
+        v = x[1] # Just grab values
 
+        phi = self.Retina.foveate(v, l_t)
+
+        # revisit
         phi_out = F.relu(self.fc1(phi))
         l_out = F.relu(self.fc2(l_t))
 
-        g_t = F.relu(self.fc3(phi_out+l_out))
+        if self.intensity:
+            intensity = x[1]
+            i_rep = self.Retina.foveate(intensity, l_t)
+            i_out = F.relu(self.fc3(i_rep))
+            g_t = F.relu(self.fc4(torch.cat((phi_out, l_out, i_out), 1)))
+        else:
+            g_t = F.relu(self.fc4(torch.cat((phi_out, l_out), 1)))
         return g_t
 
 class GlimpseNetwork(nn.Module):

@@ -1,4 +1,5 @@
 import torch
+import math
 from torch import nn
 from modules import *
 import torch.nn.functional as F
@@ -26,143 +27,292 @@ class Model(nn.Module):
     def initHidden(self, bsz):
         h1 = torch.zeros(self.nlayers, bsz, self.nhid)
         h1.requires_grad = True
-        h2 = torch.zeros(self.nlayers, bsz, self.nhid)
-        h2.requires_grad = True
-        return (h1, h2)
+        #h2 = torch.zeros(self.nlayers, bsz, self.nhid)
+        #h2.requires_grad = True
+        #return (h1, h2)
+        return h1
+
+    def computeLoss(self, logits, labels):
+        # N x C is wrong?
+        if len(labels.shape) > 1:
+            labels = torch.argmax(labels, 1)
+        return F.cross_entropy(logits, labels)
         
-    #def initHidden(self, bsz):
-    #    """Initialize hidden states"""
-    #    if self._CELL_TYPE == "LSTM":
-    #        h = (torch.zeros(self.nlayers,
-    #                         bsz,
-    #                         self.nhid),
-    #             torch.zeros(self.nlayers,
-    #                         bsz,
-    #                         self.nhid))
-    #    else:
-    #        h = torch.zeros(self.nlayers,
-    #                        bsz,
-    #                        self.nhid)
-    #    return h
-
-    def getCriterion(self, name):
-        """PyTorch implementations of Loss functions"""
-        if name == "mse":
-            criterion = torch.nn.MSELoss(size_average=True, reduction="mean")
-        elif name == "crossentropy":
-            criterion = torch.nn.CrossEntropyLoss(weight=None, size_average=True,
-                                             ignore_index=-100, reduction="mean")
-        elif name == "bce":
-            criterion = torch.nn.BCELoss(weight=None, size_average=True,
-                                    reduction="mean")
-        else:
-            raise NotImplementedError
-        return criterion
-
-    def computeLoss(self, pred, label):
-        """
-        Basic loss computation, this can be written over in individual
-        models to use custom loss functions.
-        """
-        criterion = self.getCriterion(self._LOSS_NAME)
-        loss = criterion.forward(pred, label)
-        return loss
-
 class RNN(Model):
     def __init__(self, config, data_setting):
-        """
-        Example model implementation.
-
-        Parameters
-        ----------
-        config : dict
-            A dictionary that contains the experimental configuration (number
-            of dimensions in the hidden state, batch size, etc.). This
-            dictionary gets passed into the parent Model() and initialized.
-
-        data_setting : dict
-            A dictionairy containing relevant settings from the dataset (number
-            of classes to predict, whether or not the time series are of
-            variable-length, how many variables the data have, etc.)
-        """
         super(RNN, self).__init__(config=config,
                                   data_setting=data_setting)
-        self.NAME = "RNN" # Name of the model for creating the log files
+        self.NAME = "RNNMean"
 
         # --- Mappings ---
-        self.RNNCell = nn.LSTM(self._ninp, self.nhid, self.nlayers)
+        self.RNNCell = nn.GRU(self._ninp, self.nhid, self.nlayers)
         self.predict = nn.Linear(self.nhid, self._nclasses)
     
-    def forward(self, data, epoch=False, test=False):
-        """
-        The main method of your model, completely mapping the input data to the
-        output predictions. In this example, the RNN outputs a classification
-        using only the final hidden state (out[-1]).
-        """
-        X, _, masks, _ = data
-        X = X.transpose(0, 1)
-        T, B, V = X.shape # Assume timesteps x batch x variables input
+    def forward(self, data, **kwargs):
+        # RNN takes in "imputed"
+        x, m, d = data[0]
+
+        B, T, V = x.shape # Assume timesteps x batch x variables input
+        #k = x.shape[1] // self.nref
+        #x = F.avg_pool1d(x.transpose(1, 2), k).transpose(1, 2)
+        # REVISIT
+        #x = x.reshape(B, self.nref, -1, V).mean(2)
+        x = x.transpose(0, 1) # sequence first
+        self.reference_timesteps = torch.zeros(T)
         hidden = self.initHidden(B)
-        out, hidden = self.RNNCell(X, hidden)
+        out, hidden = self.RNNCell(x, hidden)
         logits = self.predict(out[-1]).squeeze()
         return logits
 
-    def computeLoss(self, logits, labels):
-        return F.cross_entropy(logits, labels)
+class RNNSimple(Model):
+    def __init__(self, config, data_setting):
+        super(RNNSimple, self).__init__(config=config,
+                                  data_setting=data_setting)
+        self.NAME = "RNN_simple"
+
+        # --- Mappings ---
+        self.RNNCell = nn.GRU(self._ninp*2, self.nhid, self.nlayers)
+        self.predict = nn.Linear(self.nhid, self._nclasses)
+    
+    def forward(self, data, **kwargs):
+        # RNNSimple takes in "imputed"
+        x, m, d = data[0]
+        x = torch.cat((x, m), 2)
+
+        B, T, V = x.shape # Assume timesteps x batch x variables input
+        x = x.transpose(0, 1) # sequence first
+        self.reference_timesteps = torch.zeros(T)
+        hidden = self.initHidden(B)
+        out, hidden = self.RNNCell(x, hidden)
+        logits = self.predict(out[-1]).squeeze()
+        return logits
+
+class RNNDelta(Model):
+    def __init__(self, config, data_setting):
+        super(RNNDelta, self).__init__(config=config,
+                                  data_setting=data_setting)
+        self.NAME = "RNN_delta"
+
+        # --- Mappings ---
+        self.RNNCell = nn.GRU(self._ninp*2, self.nhid, self.nlayers)
+        self.predict = nn.Linear(self.nhid, self._nclasses)
+    
+    def forward(self, data, **kwargs):
+        # RNN takes in "imputed"
+        x, m, d = data[0]
+        x = torch.cat((x, d), 2)
+
+        B, T, V = x.shape # Assume timesteps x batch x variables input
+        x = x.transpose(0, 1) # sequence first
+        self.reference_timesteps = torch.zeros(T)
+        hidden = self.initHidden(B)
+        out, hidden = self.RNNCell(x, hidden)
+        logits = self.predict(out[-1]).squeeze()
+        return logits
+
+class RNNInterp(Model):
+    def __init__(self, config, data_setting):
+        super(RNNInterp, self).__init__(config=config,
+                                  data_setting=data_setting)
+        self.NAME = "RNNInterp"
+
+        # --- Mappings ---
+        self.RNNCell = nn.GRU(self._ninp, self.nhid, self.nlayers)
+        self.predict = nn.Linear(self.nhid, self._nclasses)
+    
+    def forward(self, data, **kwargs):
+        # RNN_interp takes in "interpolated"
+        x, l = data[1]
+
+        B, T, V = x.shape # Assume timesteps x batch x variables input
+        x = x.transpose(0, 1) # sequence first
+        self.reference_timesteps = torch.zeros(T)
+        hidden = self.initHidden(B)
+        out, hidden = self.RNNCell(x, hidden)
+        logits = self.predict(out[-1]).squeeze()
+        return logits
+
+class FilterLinear(nn.Module):
+    def __init__(self, in_features, out_features, filter_square_matrix, bias=True):
+        """Multiply an input matrix with a diagonally-weighted
+        parameter matrix.
+        """
+        super(FilterLinear, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        
+        self.linear_filter = nn.Linear(in_features, out_features)
+        self.linear_filter.weight = torch.nn.Parameter(self.linear_filter.weight * torch.eye(in_features))
+
+        #self.filter_square_matrix = torch.tensor(filter_square_matrix,
+        #                                         dtype=torch.float,
+        #                                         requires_grad=False)
+        #
+        #self.weight = Parameter(torch.Tensor(out_features, in_features))
+        #if bias:
+        #    self.bias = Parameter(torch.Tensor(out_features))
+        #else:
+        #    self.register_parameter('bias', None)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        stdv = 1. / math.sqrt(self.linear_filter.weight.size(1))
+        self.linear_filter.weight.data.uniform_(-stdv, stdv)
+        self.linear_filter.bias.data.uniform_(-stdv, stdv)
+#         print(self.weight.data)
+#         print(self.bias.data)
+
+    def forward(self, matrix):
+        #print(self.filter_square_matrix.mul(self.weight))
+        #return F.linear(input, self.filter_square_matrix.mul(self.weight), self.bias)
+        return self.linear_filter(matrix)
+
+class GRU_D(Model):
+    def __init__(self, config, data_setting):
+        # --- hyperparameters ---
+        self.NAME = "GRU_D"
+        super(GRU_D, self).__init__(config, data_setting)
+        combined_dim = self.nhid + 2*self._ninp # Input and missingness vector
+        self._identity = torch.eye(self._ninp)
+        self._zeros_x = torch.zeros(self._ninp)
+        self._zeros_h = torch.zeros(self.nhid)
+        self._h_grads = []
+
+        # --- mappings ---
+        self.z = nn.Linear(combined_dim, self.nhid) # Update gate
+        self.r = nn.Linear(combined_dim, self.nhid) # Reset gate
+        self.h = nn.Linear(combined_dim, self.nhid)
+        self.out = nn.Linear(self.nhid, self._nclasses)
+        self.gamma_x = FilterLinear(self._ninp,
+                                    self._ninp,
+                                    self._identity)
+        self.gamma_h = nn.Linear(self._ninp, self.nhid)
+        #self.rnn = self.initRNN(combined_dim, self.nhid)
+
+    def gru_d_cell(self, x, h, m, dt, x_prime):
+        # --- compute decays ---
+        delta_x = torch.exp(-torch.max(self._zeros_x, self.gamma_x(dt)))
+
+        # --- apply state-decay ---
+        delta_h = torch.exp(-torch.max(self._zeros_h, self.gamma_h(dt)))
+        h = delta_h * h
+
+        x_prime = m*x + (1-m)*x_prime # Update last-observed value
+        # TEST: x_prime should be last-observed values.
+
+        # --- estimate new x value ---
+        x = m*x + (1-m)*(delta_x*x_prime + (1-delta_x)*self._x_mean)
+
+        # --- gating functions ---
+        combined = torch.cat((x, h, m), dim=2)
+        r = torch.sigmoid(self.r(combined))
+        z = torch.sigmoid(self.z(combined))
+        new_combined = torch.cat((x, torch.mul(r, h), m), dim=2)
+        h_tilde = torch.tanh(self.h(new_combined))
+        h = (1 - z)*h + z*h_tilde
+        return h, x_prime
+    
+    def forward(self, data, **kwargs):
+        # GRU-D takes in "imputed"
+        vals, masks, diffs = data[0]
+        vals = vals.transpose(0, 1)
+        masks = masks.transpose(0, 1)
+        diffs = diffs.transpose(0, 1)
+        T, B, V = vals.shape
+        #self._x_mean = self._x_mean[:self._input_dim]
+        self._x_mean = vals.mean(0) # Mean over timesteps
+        #h = self.initHidden(B)
+        h = torch.zeros(self.nlayers, B, self.nhid)
+        #h.requires_grad = True
+        x_prime = torch.zeros(self._ninp)
+        for t in range(T):
+            x = vals[t].unsqueeze(0)
+            m = masks[t].unsqueeze(0)
+            diff = diffs[t].unsqueeze(0)
+            h, x_prime = self.gru_d_cell(x, h, m, diff, x_prime)
+
+        logits = self.out(h).squeeze(0) # Remove time dimension
+        return logits
 
 class CAT(Model):
-    def __init__(self, config, data_setting, nref=5, ngran=2, nsample=7,
-                 gwidth=0.05, nemb=10, std=0.15):
+    def __init__(self, config, data_setting, nhop=3, intensity=True, ngran=2, nsample=20, scaling_factor=6,
+                 gwidth=0.05, nemb=50, std=0.15, explore=False):
         super(CAT, self).__init__(config, data_setting)
-        self.NAME = "CAT_explore"
-        self.nref = nref # Number requested timesteps
+        self.NAME = "CAT_long"
+        self.nhop = nhop # Number requested timesteps
         self.ngranularity = ngran # How many levels of granularity
         self.nsample = nsample # Number of timesteps to collect around l_t
         self.gwidth = gwidth # How big steps should be in sensor
         self.nemb = nemb # Dimensions into which to embed the [glimpse, location] info
+        self.scaling_factor = scaling_factor
         self.std = std
+        self.explore = explore
+        self.intensity = intensity
         self.epsilons = exponentialDecay(self._nepoch)
         self._bsz = config["training"]["batch_size"]
         
         # --- Mappings ---
         self.Controller = Controller(self.nhid, self.std)
         self.BaselineNetwork = BaselineNetwork(self.nhid, 1)
-        self.GlimpseNetwork = MVGlimpseNetwork(self._ninp, self.nemb,
-                                               self.ngranularity, self.nsample,
-                                               self.gwidth)
-        self.RNN = torch.nn.LSTM(self.nemb, self.nhid, self.nlayers)
+        self.GlimpseNetwork = GN(self._ninp, self.nemb, self.nsample, self.ngranularity, self.scaling_factor, self.intensity)
+        #self.GlimpseNetwork = MVGlimpseNetwork(self._ninp, self.nemb, self.ngranularity, self.nsample, self.gwidth)
+        self.RNN = torch.nn.GRU(self.nemb, self.nhid, self.nlayers)
         self.predict = torch.nn.Linear(self.nhid, self._nclasses)
 
+    def d(self, T, l_t):
+        #return ((0.5*(l_t + 1.0))*T)
+        return T*0.5*(1+l_t)
+
     def forward(self, data, epoch, test):
-        if test:
-            self.Controller.std = 0.05
-        else:
-            self.Controller.std = self.epsilons[epoch]
-             #pass
- #             self.Controller.std = 0.3
+        # CAT takes in "interpolated"
+        data = data[1]
+        t = data[0]
+        v = data[1]
+        l = data[2]
+        t_max = t[:, -1, :].squeeze()
+        #print(data[0][:, -1, :])
+
+        if self.explore:
+            if test:
+                self.Controller.std = 0.05
+            else:
+                self.Controller.std = self.epsilons[epoch]
+ #               self.Controller.std = 0.3
             
-        self.means = torch.zeros((self._nclasses, self.nref)) # For saving class-wise means
+        self.means = torch.zeros((self._nclasses, self.nhop)) # For saving class-wise means
         baselines = [] # Predicted baselines
         reference_timesteps = [] # Which classes to halt at each step
         log_pi = [] # Log probability of chosen actions
         glimpses = []
         
         # --- initial glimpse ---
-        l_t = torch.FloatTensor(self._bsz, 1).uniform_(0, 1)
-        l_t.requires_grad = False
+        l_t = torch.ones(self._bsz, 1).uniform_(-1, 1)
+        #l_t.requires_grad = False
+        #l_t = torch.mul(t_max, 0.5*(1+l_t.squeeze()))
+        #l_t = self.d(t[:, -1, :].squeeze(), l_t.squeeze()) # Denormalize
+        #print(t_max.dtype)
+        #print(l_t.dtype)
+        #print(type(t_max))
+        print(t_max*0.5*(1+l_t.squeeze()))
+        #l_t = t_max*0.5*(1+l_t.squeeze())
+        print(l_t.shape)
         hidden = self.initHidden(self._bsz)
         reference_timesteps.append(l_t.squeeze())
-
         self.greps = []
-        for i in range(self.nref+1):
-            out, hidden, log_probs, l_t, b_t, glimpse = self.CATCell(data, hidden, l_t)
+        for i in range(self.nhop+1):
+            out, hidden, log_probs, l_t, b_t = self.CATCell(data, hidden, l_t)
+            #print(data[0].shape)
+            #print(torch.max(data[0], 1)[0].shape)
+            #l_t = self.GlimpseNetwork.denormalize(torch.max(data[0], 1)[0], l_t) # Denormalize
+            #l_t = self.GlimpseNetwork.denormalize(torch.max(data[0], 1)[0], l_t) # Denormalize
             log_pi.append(log_probs)
             baselines.append(b_t)
             reference_timesteps.append(l_t.squeeze())
-            glimpses.append(glimpse)
+            #glimpses.append(glimpse)
             
-        self.greps = torch.stack(self.greps).squeeze()
-        self.glimpses = torch.stack(glimpses).squeeze().transpose(0, 1)[:, :-1] # B x R
+        assert 2 == 3
+        #self.greps = torch.stack(self.greps).squeeze()
+        #self.glimpses = torch.stack(glimpses).squeeze().transpose(0, 1)[:, :-1] # B x R
         self.reference_timesteps = torch.stack(reference_timesteps).squeeze().transpose(0, 1)[:, :-2] # B x R
         self.baselines = torch.stack(baselines).squeeze().transpose(0, 1)[:, :-1] # B x R
         self.log_pi = torch.stack(log_pi).squeeze().transpose(0, 1)[:, :-1] # B x R
@@ -170,36 +320,27 @@ class CAT(Model):
         return logits
     
     def CATCell(self, data, h_prev, l):
-        #start = time.time()
-        grep, glimpse = self.GlimpseNetwork(data, l)
-        #end = time.time()
-        #print("Glimpse Sensor took {} minutes.".format(np.round((end-start)/60., 5)))
-        #start = time.time()
+        grep = self.GlimpseNetwork(data, l)
+        #grep, glimpse = self.GlimpseNetwork(data, l)
         out, hidden = self.RNN(grep.unsqueeze(0), h_prev)
-        #end = time.time()
-        #print("RNN took {} minutes.".format(np.round((end-start)/60., 5)))
         self.greps.append(out)
-        #start = time.time()
         log_probs, l_next = self.Controller(out)
-        #end = time.time()
-        #print("Controller took {} minutes.".format(np.round((end-start)/60., 5)))
-        #start = time.time()
         b_t = self.BaselineNetwork(out)
-        #end = time.time()
-        #print("Baseline took {} minutes.".format(np.round((end-start)/60., 5)))
-        return out, hidden, log_probs, l_next, b_t, glimpse
+        return out, hidden, log_probs, l_next, b_t#, grep
     
     def computeLoss(self, logits, y):
         # --- save class-specific means ---
-        for i in y.unique():
-            self.means[i] = self.glimpses[y == i].mean(0).unsqueeze(0)
+        #for i in y.unique():
+        #    self.means[i] = self.glimpses[y == i].mean(0).unsqueeze(0)
 
         # --- compute reward ---
         predicted = torch.max(torch.softmax(logits, 1), 1)[1]
+        if len(y.shape) > 1:
+            y = torch.argmax(y, 1)
 #         self.r = (predicted.float().detach() == y.float()).float()
         self.r = ((2*(predicted.float().detach() == y.float()).float())-1) # B x 1
         self.R = self.r.mean()
-        self.r = self.r.unsqueeze(1).repeat(1, self.nref) # B x nref
+        self.r = self.r.unsqueeze(1).repeat(1, self.nhop) # B x nref
         
         self.loss_c = F.cross_entropy(logits, y)
         self.loss_b = F.mse_loss(self.baselines, self.r)  # Baseline should approximate mean reward
@@ -260,146 +401,162 @@ class PolicyFree(Model):
 
         return F.cross_entropy(logits, y)
 
-class Interpolator(Model):
+class RNN_interp(Model):
     def __init__(self, config, data_setting, adapter="linear", nref=10):#nhid, nclasses, ninp, nlayers, R, adapter="linear"):
-        super(Interpolator, self).__init__(config, data_setting)
+        super(RNN_interp, self).__init__(config, data_setting)
+
         self.nref = nref
-        self.r = torch.tensor(np.linspace(0, 1, nref), dtype=torch.float)
-        self.r = self.r.unsqueeze(0).repeat(self._B, 1)
 
         # --- Load sub-networks ---
-        if adapter == "gaussian":
-            self.Interpolator = GaussianAdapter(self._ninp)
-            self.NAME = "IPN"
-        if adapter == "linear":
-            self.Interpolator = LinearInterpolator()
-            self.NAME = "LinearInterpolator"
-        self.Discriminator = Discriminator(1*self._ninp, self.nhid, self._nclasses, self.nlayers)
+        self.Interpolator = LinearInterpolator()
+        self.NAME = "RNN_interp"
+        self.rnn = nn.GRU(self._ninp, self.nhid)
+        self.fc = nn.Linear(self.nhid, self._nclasses)
     
-    def forward(self, data, epoch, test):
-        t, v = data
+    def forward(self, data, **kwargs):
+        # Interpolator takes raw input
+        t, v = data[2]
+        B, T, V = v.shape
+        self.reference_timesteps = torch.linspace(t.min(), t.max(), self.nref).unsqueeze(0).repeat(self._B, 1)
         glimpses = []
-        self.means = torch.zeros((self._nclasses, self.nref)) # For saving class-wise means
-        X_regular = self.Interpolator(t, v, self.r)
+        #self.means = torch.zeros((self._nclasses, self.nref)) # For saving class-wise means
+
+        # Interpolation
+        X_regular = self.Interpolator.forward(t, v, self.reference_timesteps)
+        # X_regular has nans: Because of 0s?
         if (self._ninp == 1) & (len(X_regular.shape) < 3):
             X_regular = X_regular.unsqueeze(2)
         X_regular = X_regular.transpose(0, 1)
-        prediction = self.Discriminator(X_regular)
+
+        # --- inference ---
+        state = torch.zeros(self.nlayers, B, self.nhid)
+        out, state = self.rnn(X_regular, state)
+        logits = self.fc(out[-1])
             
-        self.glimpses = X_regular.transpose(0, 1).squeeze()
-        return prediction
+        #self.glimpses = X_regular.transpose(0, 1).squeeze()
+        return logits
     
     def computeLoss(self, logits, y):
         # --- save class-specific means ---
-        for i in y.unique():
-            self.means[i] = self.glimpses[y == i].mean(0).unsqueeze(0)
+        #for i in y.unique():
+        #    self.means[i] = self.glimpses[y == i].mean(0).unsqueeze(0)
         return F.cross_entropy(logits, y)
 
 class IPN(Model):
-    def __init__(self, nhid, nclasses, ninp, nlayers, R, BATCH_SIZE, REF_STEPS=None):
-        super(IPN, self).__init__()
-        self.nlayers = nlayers
-        self.BATCH_SIZE = BATCH_SIZE
-        self.nhid = nhid
-        self.nclasses = nclasses
-        self.reference_timesteps = torch.tensor(np.linspace(0, 1, R), dtype=torch.float)
+    def __init__(self, config, data_setting, nref=10):#nhid, nclasses, ninp, nlayers, R, adapter="linear"):
+        super(IPN, self).__init__(config, data_setting)
+        self.nref = nref
 
         # --- Load sub-networks ---
-        self.Discriminator = Discriminator(1*ninp, nhid, nclasses, nlayers)
-        self.Interpolator = Interpolator(ninp)
+        self.Interpolator = GaussianAdapter(self._ninp)
+        self.NAME = "IPN"
+        self.rnn = nn.GRU(self._ninp, self.nhid)
+        self.fc = nn.Linear(self.nhid, self._nclasses)
     
-    def forward(self, data):
-        timesteps, values = data
-        X_regular = self.Interpolator(timesteps, values, self.reference_timesteps)
-        prediction = self.Discriminator(X_regular)
-        return prediction
+    def forward(self, data, **kwargs):
+        # Interpolator takes raw input
+        t, v = data[2]
+        B, T, V = v.shape
+        self.reference_timesteps = torch.linspace(t.min(), t.max(), self.nref).unsqueeze(0).repeat(self._B, 1)
+        glimpses = []
+        self.means = torch.zeros((self._nclasses, self.nref)) # For saving class-wise means
+
+        # Interpolation
+        X_regular = self.Interpolator.forward(t, v, self.reference_timesteps)
+        if (self._ninp == 1) & (len(X_regular.shape) < 3):
+            X_regular = X_regular.unsqueeze(2)
+        X_regular = X_regular.transpose(0, 1)
+
+        # --- inference ---
+        state = torch.zeros(self.nlayers, B, self.nhid)
+        out, state = self.rnn(X_regular, state)
+        logits = self.fc(out[-1])
+        #self.glimpses = X_regular.transpose(0, 1).squeeze()
+        return logits
     
-    def computeLoss(self, y_hat, y):
-        if not self.criterion:
-            self.criterion = torch.nn.CrossEntropyLoss()
-        return self.criterion(y_hat, y)
+    def computeLoss(self, logits, y):
+        # --- save class-specific means ---
+        #for i in y.unique():
+        #    self.means[i] = self.glimpses[y == i].mean(0).unsqueeze(0)
+        return F.cross_entropy(logits, y)
 
-class GRU_D(Model):
-    """GRU Decay
-    Method from the paper titled: Recurrent Neural Networks for
-    Multivariate Time Series with Missing Values
-    Paper link: https://arxiv.org/pdf/1606.01865.pdf
-
-    TODO
-        - [ ] Variable-length sequences
-    
-    """
-    def __init__(self, config, data_setting):
-
-        # --- hyperparameters ---
-        self.NAME = "GRU_D"
-        super(GRU_D, self).__init__(config, data_setting)
-        self._input_dim = int(input_dim/3.) # Missingness and time interval vectors implied
-        combined_dim = self.HIDDEN_DIM + 2*self._input_dim # Input and missingness vector
-        self._identity = torch.eye(self._input_dim)
-        self._zeros_x = torch.zeros(self._input_dim)
-        self._zeros_h = torch.zeros(self.HIDDEN_DIM)
-        self._h_grads = []
-
-        # --- mappings ---
-        self.z = nn.Linear(combined_dim, self.HIDDEN_DIM) # Update gate
-        self.r = nn.Linear(combined_dim, self.HIDDEN_DIM) # Reset gate
-        self.h = nn.Linear(combined_dim, self.HIDDEN_DIM)
-        #self.h.register_backward_hook(self.save_gradient) # SAVE THE GRADIENTS
-        self.out = nn.Linear(self.HIDDEN_DIM, self._N_CLASSES)
-        self.gamma_x = FilterLinear(self._input_dim,
-                                    self._input_dim,
-                                    self._identity)
-        self.gamma_h = nn.Linear(self._input_dim, self.HIDDEN_DIM)
-        self.rnn = self.initRNN(combined_dim, self.HIDDEN_DIM)
-
-        # --- nonlinearities ---
-        ##self.sigmoid = torch.sigmoid()
-        self.tanh = nn.Tanh()
-        self.softmax = nn.Softmax(dim=1)
-
-    def gru_d_cell(self, x, h, m, dt, x_prime):
-        # --- compute decays ---
-        delta_x = torch.exp(-torch.max(self._zeros_x, self.gamma_x(dt)))
-
-        # --- apply state-decay ---
-        delta_h = torch.exp(-torch.max(self._zeros_h, self.gamma_h(dt)))
-        h = delta_h * h
-
-        x_prime = m*x + (1-m)*x_prime # Update last-observed value
-        # TEST: x_prime should be last-observed values.
-
-        # --- estimate new x value ---
-        x = m*x + (1-m)*(delta_x*x_prime + (1-delta_x)*self._x_mean)
-
-        # --- gating functions ---
-        combined = torch.cat((x, h, m), dim=2)
-        r = torch.sigmoid(self.r(combined))
-        z = torch.sigmoid(self.z(combined))
-        new_combined = torch.cat((x, torch.mul(r, h), m), dim=2)
-        h_tilde = self.tanh(self.h(new_combined))
-        h = (1 - z)*h + z*h_tilde
-        return h, x_prime
-    
-    def forward(self, data):
-        vals, time, masks, lengths = data
-        vals = vals.transpose(0, 1)
-        masks = masks.transpose(0, 1)
-        T, B, V = vals.shape
-        diffs = time[:, 1:] - time[:, :-1]
-        diffs = torch.cat((torch.zeros(B, 1), diffs), 1)
-        self._x_mean = self._x_mean[:self._input_dim]
-        h = self.initHidden(B)
-        x_prime = torch.zeros(self._input_dim)
-        for i in range(T):
-            x = vals[:, i, :].unsqueeze(1)
-            m = masks[:, i, :].unsqueeze(1)
-            diff = time[:, i, :].unsqueeze(1)
-            h, x_prime = self.gru_d_cell(x, h, mask, diff, x_prime)
-
-        output = self.out(h).squeeze(0) # Remove time dimension
-        predictions = self.out_nonlin(output)
-        return predictions
+#class IPN(Model):
+#    def __init__(self, nhid, nclasses, ninp, nlayers, R, BATCH_SIZE, REF_STEPS=None):
+#        super(IPN, self).__init__()
+#        self.nlayers = nlayers
+#        self.BATCH_SIZE = BATCH_SIZE
+#        self.nhid = nhid
+#        self.nclasses = nclasses
+#        self.nref = R
+#        self.reference_timesteps = torch.tensor(np.linspace(0, 1, R), dtype=torch.float)
+#
+#        # --- Load sub-networks ---
+#        self.Discriminator = Discriminator(1*ninp, nhid, nclasses, nlayers)
+#        self.Interpolator = Interpolator(ninp)
+#    
+#    def forward(self, data):
+#        timesteps, values = data
+#        self.reference_timesteps = torch.linspace(timesteps.min(), timesteps.max(), self.nref)
+#        X_regular = self.Interpolator(timesteps, values, self.reference_timesteps)
+#        prediction = self.Discriminator(X_regular)
+#        return prediction
+#    
+#    def computeLoss(self, y_hat, y):
+#        if not self.criterion:
+#            self.criterion = torch.nn.CrossEntropyLoss()
+#        return self.criterion(y_hat, y)
+#
+#class Interpolator(Model):
+#    def __init__(self, config, data_setting, adapter="linear", nref=10):#nhid, nclasses, ninp, nlayers, R, adapter="linear"):
+#        super(Interpolator, self).__init__(config, data_setting)
+#        self.nref = nref
+#        self.r = torch.tensor(np.linspace(0, 1, nref), dtype=torch.float)
+#        self.r = self.r.unsqueeze(0).repeat(self._B, 1)
+#
+#        # --- Load sub-networks ---
+#        if adapter == "gaussian":
+#            self.Interpolator = GaussianAdapter(self._ninp)
+#            self.NAME = "IPN"
+#        if adapter == "linear":
+#            self.Interpolator = LinearInterpolator()
+#            self.NAME = "LinearInterpolator"
+#        self.rnn = nn.GRU(self._ninp, self.nhid)
+#        self.fc = nn.Linear(self.nhid, self._nclasses)
+#        #self.Discriminator = Discriminator(1*self._ninp, self.nhid, self._nclasses, self.nlayers)
+#    
+#    def forward(self, data, **kwargs):
+#        # Interpolator takes raw input
+#        t, v = data[2]
+#        B, T, V = v.shape
+#        #t, v = data
+#        self.reference_timesteps = torch.linspace(t.min(), t.max(), self.nref).unsqueeze(0).repeat(self._B, 1)
+#        glimpses = []
+#        self.means = torch.zeros((self._nclasses, self.nref)) # For saving class-wise means
+#
+#        # Interpolation
+#        print(torch.isnan(t).sum())
+#        print(torch.isnan(v).sum())
+#        X_regular = self.Interpolator.forward(t, v, self.reference_timesteps)
+#        print(torch.isnan(X_regular).sum())
+#        if (self._ninp == 1) & (len(X_regular.shape) < 3):
+#            X_regular = X_regular.unsqueeze(2)
+#        X_regular = X_regular.transpose(0, 1)
+#
+#        # --- inference ---
+#        state = torch.zeros(self.nlayers, B, self.nhid)
+#        out, state = self.rnn(X_regular, state)
+#        logits = self.fc(out[-1])
+#        print(logits)
+#        print()
+#            
+#        #self.glimpses = X_regular.transpose(0, 1).squeeze()
+#        return logits
+#    
+#    def computeLoss(self, logits, y):
+#        # --- save class-specific means ---
+#        #for i in y.unique():
+#        #    self.means[i] = self.glimpses[y == i].mean(0).unsqueeze(0)
+#        return F.cross_entropy(logits, y)
 
 #class CAT(Model):
 #    def __init__(self, config, data_setting, gtype="flatten", nref=10):#ninp, nhidENSION, nclasses, nlayers, nref=10):

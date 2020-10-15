@@ -23,6 +23,27 @@ class metric():
         except:
              return np.zeros_like(pred)
 
+    def toCategorical(self, y, n_classes):
+        """1-hot encode a tensor.
+
+        Also known as comnverting a vector to a categorical matrix.
+
+        Paremeters
+        ----------
+        y : torch.LongTensor()
+            1-dimensional vector of integers to be one-hot encoded.
+        n_classes : int
+            The number of total categories.
+
+        Returns
+        -------
+        categorical : np.array()
+            A one-hot encoded matrix computed from vector y
+
+        """
+        categorical = np.eye(n_classes, dtype='uint8')[y]
+        return categorical
+
 class Accuracy(metric):
     def __init__(self):
         self.name = "Accuracy"
@@ -30,7 +51,21 @@ class Accuracy(metric):
     def compute(self, pred, true):
         if len(pred.squeeze().shape) > 1:
             pred = np.argmax(pred, 1)
+        if len(true.shape) > 1:
+            true = np.argmax(true, 1)
         return accuracy_score(true, pred)
+
+class AUC_micro(metric):
+    def __init__(self):
+        self.name = "AUC_micro"
+
+    def compute(self, pred, true):
+        if len(true.shape) == 1:
+            true = true.reshape(-1, 1)
+        if true.shape[1] == 1:
+            true = self.toCategorical(true, 2).squeeze()
+            # Eventually, true (NxC) and pred (N) worked
+        return roc_auc_score(true.squeeze(), pred.squeeze(), average="micro")
 
 class MLLAUC(metric):
     def __init__(self):
@@ -123,17 +158,12 @@ class AUC_macro(metric):
         self.metric = roc_auc_score
 
     def compute(self, pred, true):
-        try:
-            return roc_auc_score(true, pred, average="macro")
-        except:
-            return np.zeros_like(pred)
+        if len(true.shape) == 1:
+            true = true.reshape(-1, 1)
+        if true.shape[1] == 1:
+            true = self.toCategorical(true, 2).squeeze()
+        return roc_auc_score(true, pred, average="macro")
 
-class AUC_micro(metric):
-    def __init__(self):
-        self.name = "AUC_micro"
-
-    def compute(self, pred, true):
-        return roc_auc_score(true, pred, average="micro")
 
 class F1_macro(metric):
     def __init__(self):

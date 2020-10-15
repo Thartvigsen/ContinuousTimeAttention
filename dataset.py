@@ -9,6 +9,8 @@ import pandas as pd
 import re
 from readers import InHospitalMortalityReader, PhenotypingReader
 import time
+from scipy import interpolate
+from torch.nn.utils.rnn import pad_sequence
 #from pyts.approximation import MultipleCoefficientBinning
 
 class Dataset(data.Dataset):
@@ -363,7 +365,7 @@ class InHospitalMortality(Dataset):
     def __init__(self):
         super(InHospitalMortality, self).__init__()
         start = time.time()
-        self.NAME = "InHospitalMortality"
+        self.NAME = "InHospitalMortality_interpolate3"
         self._load_path = self._data_path + "MIMIC/in-hospital-mortality/"
         self._train_path = self._load_path + "train/"
         self._test_path = self._load_path + "test/"
@@ -373,7 +375,7 @@ class InHospitalMortality(Dataset):
         self._mean = False
         self.R = 10
         #self.data, self.labels = self.loadData()
-        self.values, self.timesteps, self.masks, self.labels, self.lengths = self.loadData()
+        self.values, self.timesteps, self.intensities, self.masks, self.labels, self.lengths = self.loadData()
         print("Loaded data of shape {}".format(self.values.shape))
         self.data_setting["N_FEATURES"] = 17
         self.data_setting["N_CLASSES"] = 2
@@ -381,18 +383,18 @@ class InHospitalMortality(Dataset):
         print("preprocessing took {} minutes.".format(np.round((end-start)/60., 3)))
     
     def __getitem__(self, ix):
-        return (self.values[ix], self.timesteps[ix], self.masks[ix], self.lengths[ix]), self.labels[ix]
+        return (self.timesteps[ix], self.values[ix], self.intensities[ix], self.masks[ix], self.lengths[ix]), self.labels[ix]
         #return self.data[ix], self.labels[ix]
     
     def __len__(self):
         return len(self.labels)
 
     def collectData(self, load_path, reader, train=True):
-        #indices = range(len(os.listdir(load_path))-1)
-        if train:
-            indices = np.arange(0, 5000)
-        else:
-            indices = np.arange(0, 1000)
+        indices = range(len(os.listdir(load_path))-1)
+        #if train:
+        #    indices = np.arange(0, 5000)
+        #else:
+        #    indices = np.arange(0, 1000)
         count = 0
         values = []
         y = []
@@ -470,14 +472,22 @@ class InHospitalMortality(Dataset):
 
     def loadData(self, regen=False):
         if ((os.path.exists(self._load_path+"values.pt")) and not (regen)):
-            values = torch.load(self._load_path+"values_mean_{}.pt".format(self._mean))
+            #values = torch.load(self._load_path+"values_mean_{}.pt".format(self._mean))
+            #masks = torch.load(self._load_path+"masks_mean_{}.pt".format(self._mean))
+            #lengths = torch.load(self._load_path+"lengths_mean_{}.pt".format(self._mean))
+            #timesteps = torch.load(self._load_path+"timesteps_mean_{}.pt".format(self._mean))
+            #labels = torch.load(self._load_path+"labels_mean_{}.pt".format(self._mean))
+            values = torch.load(self._load_path+"values_new.pt")
+            #masks = torch.load(self._load_path+"masks_new.pt")
             masks = torch.load(self._load_path+"masks_mean_{}.pt".format(self._mean))
             lengths = torch.load(self._load_path+"lengths_mean_{}.pt".format(self._mean))
-            timesteps = torch.load(self._load_path+"timesteps_mean_{}.pt".format(self._mean))
-            labels = torch.load(self._load_path+"labels_mean_{}.pt".format(self._mean))
+            timesteps = torch.load(self._load_path+"timesteps_new.pt")
+            labels = torch.load(self._load_path+"labels_new.pt")
+            intensities = torch.load(self._load_path+"intensities.pt")
             self.train_ix = np.load(self._load_path+"train_ix_mean_{}.npy".format(self._mean))
             self.val_ix = np.load(self._load_path+"val_ix_mean_{}.npy".format(self._mean))
             self.test_ix = np.load(self._load_path+"test_ix_mean_{}.npy".format(self._mean))
+            print("Successfully loaded data")
         else: # Regenerate everything, then save it
             vals_train, time_train, mask_train, y_train, count_train = self.collectData(self._train_path, self._train_reader) 
             self.train_ix = np.random.choice(np.arange(count_train), int(count_train*0.8), replace=False)
@@ -517,7 +527,7 @@ class InHospitalMortality(Dataset):
             np.save(self._load_path+"train_ix_mean_{}.npy".format(self._mean), self.train_ix)
             np.save(self._load_path+"val_ix_mean_{}.npy".format(self._mean), self.val_ix)
             np.save(self._load_path+"test_ix_mean_{}.npy".format(self._mean), self.test_ix)
-        return values, timesteps, masks, labels, lengths
+        return values, timesteps, intensities, masks, labels, lengths
 
 class MVSynth(Dataset):
     def __init__(self):
@@ -562,3 +572,463 @@ class MVSynth(Dataset):
         masks = torch.tensor(masks, dtype=torch.float)
         lengths = torch.tensor(lengths, dtype=torch.float)
         return values, timesteps, labels, masks, lengths
+
+class PersonActivity(Dataset):
+    def __init__(self):
+        super(PersonActivity, self).__init__()
+        self.NAME = "PersonActivity"
+        self._load_path = self._data_path + "person_activity/"
+        self.timesteps, self.values, self.intensities, self.labels = self.loadData()
+        #self.values, self.labels = self.loadData()
+        self.data_setting["N_FEATURES"] = 12
+        self.data_setting["N_CLASSES"] = 7
+    
+    def __getitem__(self, ix):
+        return (0, self.values[ix], self.intensities[ix], 0, 0), self.labels[ix]
+    
+    def __len__(self):
+        return len(self.labels)
+
+    def loadData(self):
+        values = torch.load(self._load_path+"values.pt")
+        timesteps = torch.load(self._load_path+"timesteps.pt")
+        labels = torch.load(self._load_path+"labels.pt")
+        intensities = torch.load(self._load_path+"intensities.pt")
+        all_ix = np.arange(len(values))
+        np.random.shuffle(all_ix)
+        self.train_ix = all_ix[:int(len(values)*0.8)]
+        self.val_ix = all_ix[int(len(values)*0.8):]
+        self.test_ix = all_ix[int(len(values)*0.8):]
+        return timesteps, values, intensities, labels
+
+
+class IrregularTimeSeries(Dataset):
+    def __init__(self):
+        super(IrregularTimeSeries, self).__init__()
+
+    def __getitem__(self, ix):
+        return (0, self.values[ix], self.intensities[ix], 0, 0), self.labels[ix]
+    
+    def __len__(self):
+        return len(self.labels)
+
+    # --- Preparing ISTS data ------------------------------------------------
+    #def prepISTS(self, timesteps, values, num_timesteps):
+    #    interpolated = self.getInterpolated(timesteps, values, num_timesteps)
+    #    masked = self.getMasked(timesteps, values)
+    #    raw = self.padISTS(timesteps, values)
+    #    return interpolated, masked, raw
+
+    def getInterpolations(self, x, new_t):
+        f = interpolate.interp1d(np.arange(len(x)), x, fill_value=(x[0], x[-1]), bounds_error=False)
+        x = f(new_t)
+        return x
+
+    def makeIrregular(self, x, y):
+        timesteps = []
+        values = []
+        seq_length = 500
+        for i in range(len(x)):
+            t_i = np.sort(np.random.uniform(0, len(x[i]), seq_length))
+            if y[i] == 0:
+                m_seq = get_markov_sequence(self._m_chain_neg, seq_length)
+            else:
+                m_seq = get_markov_sequence(self._m_chain_pos, seq_length)
+            t_i = t_i[np.where(m_seq==1)]
+            x_i = self.getInterpolations(x[0].squeeze(), t_i)
+            timesteps.append(t_i)
+            values.append(x_i)
+        return timesteps, values
+
+    def getIntensity(self, t, r, alpha=0.1):
+        r = r.unsqueeze(1).repeat(1, t.shape[0]) # Add a column of all r values for each of t timesteps
+        dist = torch.exp(torch.mul(-alpha, 1*torch.sub(r, t).pow(2)))    
+        return dist.sum(1)
+
+    def resample(self, t, v, R):
+        new_r = torch.linspace(t.min(), t.max(), R)
+        new_v = []
+        lam = []
+        f = interpolate.interp1d(t, v, fill_value=(v[0], v[-1]), bounds_error=False)
+        new_v = f(new_r)
+        lam = self.getIntensity(t, new_r)
+        return new_r, torch.tensor(new_v), lam
+
+    def irregularize(self, timesteps, values, R):
+        V = []
+        L = []
+        for i in range(len(timesteps)):
+            t = timesteps[i]
+            v = values[i]
+            t, v, lam = self.resample(torch.tensor(t), torch.tensor(v), R)
+            V.append(v)
+            L.append(lam)
+        V = torch.stack(V).unsqueeze(2)
+        L = torch.stack(L).unsqueeze(2)
+        return V, L
+
+class MarkovIrregularUCR(IrregularTimeSeries):
+    def __init__(self, name, R=200, p2n_pos=0.0, n2p_pos=1.0, p2n_neg=0.0, n2p_neg=1.0):
+        super(MarkovIrregularUCR, self).__init__()
+        self.p2n_pos = p2n_pos
+        self.n2p_pos = n2p_pos
+        self.p2n_neg = p2n_neg
+        self.n2p_neg = n2p_neg
+        self._m_chain_neg = instantiate_markov(self.p2n_pos, self.n2p_pos)
+        self._m_chain_pos = instantiate_markov(self.p2n_neg, self.n2p_neg)
+        self._ucr_name = name
+        self.NAME = "UCR_{}_markov3".format(name)
+        self._load_path = self._data_path + "UCR/"
+        self.nsteps_interp = 500
+        self.nsteps_impute = 500
+        #self.values, self.labels, self.intensities = self.loadData(self.NAME)
+        self._imputed, self._interpolated, self._raw, self.labels = self.loadData(self.NAME)
+
+    def __getitem__(self, ix):
+        # CAT: interpolated, IPN: raw, GRU-D/mask/delta: imputed
+        return (self._imputed[ix], self._interpolated[ix], self._raw[ix]), self.labels[ix]
+
+    def makeIrregular(self, x, y, num_instances):
+        timesteps = []
+        values = []
+        seq_length = 500
+        for i in range(len(x)):
+            if y[i] == 0:
+                m_seq = get_markov_sequence(self._m_chain_neg, seq_length)
+            else:
+                m_seq = get_markov_sequence(self._m_chain_pos, seq_length)
+            t_i = np.sort(np.random.uniform(0, len(x[i]), seq_length))
+            #t_i = t_i[np.where(m_seq==1)[0][:seq_length]]
+            t_i = t_i[np.where(m_seq==1)[0]]
+            #t_i = (t_i-t_i.min())/(t_i.max()-t_i.min())
+            x_i = self.getInterpolations(x[i].squeeze(), t_i)
+            timesteps.append(t_i)
+            values.append(x_i)
+        return timesteps, values
+
+    def irregularize(self, timesteps, values, R):
+        interpolated = []
+        for i in range(len(timesteps)):
+            t = timesteps[i]
+            v = values[i]
+            t, v, lam = self.resample(torch.tensor(t), torch.tensor(v), R)
+            v = v.unsqueeze(1)
+            lam = torch.tensor(lam, dtype=torch.float).unsqueeze(1)
+            interpolated.append((v, lam))
+        return interpolated
+
+    def valMaskPad(self, timesteps, values, nsteps):
+        # Goal: Bin into nsteps evenly-spaced bins and then collect masks/delta
+        imputed = []
+        for i in range(len(timesteps)):
+            t = timesteps[i]
+            v = values[i]
+            bins = np.round(np.linspace(np.min(timesteps[i]), np.max(timesteps[i]), nsteps)[:, None], 3)
+            t = np.array(t)[None, :]
+            v = np.array(v)[None, :]
+            buckets = np.abs((t-bins)).argmin(0)
+            val_means = []
+            timestep_means = []
+            for n in range(nsteps):
+                ix = np.where(buckets==n)
+                val_means.append(np.nanmean(np.take(v, ix)))
+                timestep_means.append(np.nanmean(np.take(t, ix)))
+            val_means = np.array(val_means)
+            timestep_means = np.array(timestep_means)
+            masks = np.zeros_like(val_means)
+            masks[np.isnan(val_means)] = 1
+            deltas = []
+            curr_val = 0
+            for t in range(len(timestep_means)):
+                if np.isnan(timestep_means[t]): # increase counter by the amount of time that has passed
+                    curr_val += np.abs(np.float(bins[t]))
+                else:
+                    curr_val = 0
+                deltas.append(curr_val)
+            deltas = np.round(np.array(deltas), 3)
+            val_means[np.isnan(val_means)] = np.nanmean(val_means)
+            val_means = torch.tensor(val_means, dtype=torch.float)
+            masks = torch.tensor(masks, dtype=torch.float)
+            deltas = torch.tensor(deltas, dtype=torch.float)
+            imputed.append((val_means.unsqueeze(1), masks.unsqueeze(1), deltas.unsqueeze(1)))
+        return imputed
+
+    def prepISTS(self, timesteps, values, nsteps_interp, nsteps_impute):
+        # Assume timesteps/values are numpy arrays (same # steps per series)
+
+        # Masked
+        imputed = self.valMaskPad(timesteps, values, nsteps_impute)
+
+        # Interpolated
+        interpolated = self.irregularize(timesteps, values, nsteps_interp)
+        #interpolated = (V, L)
+        #interpolated = tuple([torch.tensor(i, dtype=torch.float) for i in interpolated])
+
+        timesteps = [torch.tensor(i, dtype=torch.float) for i in timesteps]
+        #lengths = []
+        #for item in timesteps:
+        #    lengths.append(len(item))
+        #lengths = torch.tensor(np.array(lengths))
+        timesteps = pad_sequence(timesteps).T.unsqueeze(2)
+        values = [torch.tensor(i, dtype=torch.float) for i in values]
+        values = pad_sequence(values).T.unsqueeze(2)
+        raw = []
+        for i in range(len(timesteps)):
+            raw.append((timesteps[i], values[i]))#, lengths[i]))
+
+        return imputed, interpolated, raw
+
+    def loadData(self, name):
+        x_train = np.loadtxt(self._load_path+"{}/{}_TRAIN.txt".format(self._ucr_name, self._ucr_name))
+        x_test = np.loadtxt(self._load_path+"{}/{}_TEST.txt".format(self._ucr_name, self._ucr_name))
+        x = np.concatenate((x_train, x_test), 0)
+
+        # Separate labels and time series
+        y = x[:, 0] - 1
+        x = x[:, 1:]
+
+        # Shuffle
+        ix = np.random.choice(len(x), len(x), replace=False)
+        x = x[ix]
+        y = y[ix]
+
+        # Make irregular
+        t, v = self.makeIrregular(x, y, self.nsteps_interp)
+        imputed, interpolated, raw = self.prepISTS(t, v, self.nsteps_interp, self.nsteps_impute)
+        #V, L = self.irregularize(t, v, self.num_instances)
+        y = torch.tensor(y, dtype=torch.long)
+        return imputed, interpolated, raw, y
+        #return V.float(), y, L.float()
+
+class MultiModalIrregularUCR(IrregularTimeSeries):
+    def __init__(self, name, R, nmode_pos=10, nmode_neg=10):
+        super(MultiModalIrregularUCR, self).__init__()
+        self._ucr_name = name
+        self.NAME = "UCR_{}_multimodal_R".format(name)
+        self._load_path = self._data_path + "UCR/"
+        self.R = R
+        self._nmode_pos = R # Num distributions. Decrease to make signal come from patterns.
+        self._nmode_neg = R # Num distributions. Decrease to make signal come from patterns.
+        self._nsteps_interp = R
+        self._nsteps_impute = R
+        self._imputed, self._interpolated, self._raw, self.labels = self.loadData(self.NAME)
+
+    def __getitem__(self, ix):
+        return (self._imputed[ix], self._interpolated[ix], self._raw[ix]), self.labels[ix]
+
+    def getTimesteps(self, N, nmode):
+        assert nmode <= N, "nmode must be <= to N"
+        std = 1/(4*nmode)
+        mus = torch.linspace(std, 1-std, nmode)
+        n_per_mode = N//nmode
+        timesteps = []
+        for n in range(nmode):
+            timesteps.append(np.random.normal(mus[n], std, n_per_mode).squeeze())
+        timesteps = np.stack(timesteps).reshape(-1)
+        if ((n_per_mode)*nmode) < N:
+            extra_timesteps = np.random.uniform(0, 1, N-((n_per_mode)*nmode))
+            timesteps = np.concatenate((timesteps, extra_timesteps), 0)
+        return np.sort(np.clip(timesteps, 0, 1))
+
+    def makeIrregular(self, x, y, num_instances):
+        timesteps = []
+        values = []
+        seq_length = self.R
+        for i in range(len(x)):
+            #if y[i] == 0:
+            #    t = self.getTimesteps(self.R, self.nmode_pos)
+            #else:
+            #    t = self.getTimesteps(self.R, self.nmode_neg)
+            t = np.linspace(0, 1, self.R)
+            t = t*len(x[i])
+            x_i = self.getInterpolations(x[i].squeeze(), t)
+            timesteps.append(t)
+            values.append(x_i)
+        return timesteps, values
+
+    def irregularize(self, timesteps, values, R):
+        interpolated = []
+        for i in range(len(timesteps)):
+            t = timesteps[i]
+            v = values[i]
+            t, v, lam = self.resample(torch.tensor(t), torch.tensor(v), R)
+            t = t.unsqueeze(1).float()
+            v = v.unsqueeze(1).float()
+            lam = lam.unsqueeze(1).float()
+            interpolated.append((t, v, lam))
+        return interpolated
+
+    def valMaskPad(self, timesteps, values, nsteps):
+        # Goal: Bin into nsteps evenly-spaced bins and then collect masks/delta
+        imputed = []
+        for i in range(len(timesteps)):
+            t = timesteps[i]
+            v = values[i]
+            bins = np.round(np.linspace(np.min(timesteps[i]), np.max(timesteps[i]), nsteps)[:, None], 3)
+            t = np.array(t)[None, :]
+            v = np.array(v)[None, :]
+            buckets = np.abs((t-bins)).argmin(0)
+            val_means = []
+            timestep_means = []
+            for n in range(nsteps):
+                ix = np.where(buckets==n)
+                val_means.append(np.nanmean(np.take(v, ix)))
+                timestep_means.append(np.nanmean(np.take(t, ix)))
+            val_means = np.array(val_means)
+            timestep_means = np.array(timestep_means)
+            masks = np.zeros_like(val_means)
+            masks[np.isnan(val_means)] = 1
+            deltas = []
+            curr_val = 0
+            for t in range(len(timestep_means)):
+                if np.isnan(timestep_means[t]): # increase counter by the amount of time that has passed
+                    curr_val += np.abs(np.float(bins[t]))
+                else:
+                    curr_val = 0
+                deltas.append(curr_val)
+            deltas = np.round(np.array(deltas), 3)
+            val_means[np.isnan(val_means)] = np.nanmean(val_means)
+            val_means = torch.tensor(val_means, dtype=torch.float)
+            masks = torch.tensor(masks, dtype=torch.float)
+            deltas = torch.tensor(deltas, dtype=torch.float)
+            imputed.append((val_means.unsqueeze(1), masks.unsqueeze(1), deltas.unsqueeze(1)))
+        return imputed
+
+    def prepISTS(self, timesteps, values, nsteps_interp, nsteps_impute):
+        # Assume timesteps/values are numpy arrays (same # steps per series)
+
+        # Masked
+        imputed = self.valMaskPad(timesteps, values, nsteps_impute)
+
+        # Interpolated
+        interpolated = self.irregularize(timesteps, values, nsteps_interp)
+
+        # Raw
+        timesteps = [torch.tensor(i, dtype=torch.float) for i in timesteps]
+        timesteps = pad_sequence(timesteps).T.unsqueeze(2)
+        values = [torch.tensor(i, dtype=torch.float) for i in values]
+        values = pad_sequence(values).T.unsqueeze(2)
+        raw = []
+        for i in range(len(timesteps)):
+            raw.append((timesteps[i], values[i]))
+
+        return imputed, interpolated, raw
+
+    def loadData(self, name):
+        x_train = np.loadtxt(self._load_path+"{}/{}_TRAIN.txt".format(self._ucr_name, self._ucr_name))
+        x_test = np.loadtxt(self._load_path+"{}/{}_TEST.txt".format(self._ucr_name, self._ucr_name))
+        x = np.concatenate((x_train, x_test), 0)
+
+        # Separate labels and time series
+        y = x[:, 0] - 1
+        x = x[:, 1:]
+
+        # Shuffle
+        ix = np.random.choice(len(x), len(x), replace=False)
+        x = x[ix]
+        y = y[ix]
+
+        # Make irregular
+        t, v = self.makeIrregular(x, y, self.R)
+        imputed, interpolated, raw = self.prepISTS(t, v, self._nsteps_interp, self._nsteps_impute)
+        #V, L = self.irregularize(t, v, self.num_instances)
+        y = torch.tensor(y, dtype=torch.long)
+        return imputed, interpolated, raw, y
+        #return V.float(), y, L.float()
+
+class HawkesIrregularUCR(IrregularTimeSeries):
+    def __init__(self, name, num_timesteps=500, a_neg=0.01, a_pos=0.8):
+        super(HawkesIrregularUCR, self).__init__()
+        self._ucr_name = name
+        self.NAME = "UCR_{}_hawkes".format(name)
+        self.mu = 0.2
+        self.a_pos = a_pos
+        self.a_neg = a_neg
+        self._load_path = self._data_path + "UCR/"
+        self.num_timesteps = num_timesteps
+        self.values, self.labels, self.intensities = self.loadData(self.NAME)
+
+    def hawkes_intensity(self, mu, alpha, points, t):
+        """Find the hawkes intensity:
+        mu + alpha * sum( np.exp(-(t-s)) for s in points if s<=t )
+        """
+        p = np.array(points)
+        p = p[p <= t]
+        p = np.exp(p - t) * alpha
+        return mu + np.sum(p)
+
+    def simulate_hawkes(self, mu, alpha, num_instances):
+        t = 0
+        points = []
+        while len(points) < num_instances:
+            m = self.hawkes_intensity(mu, alpha, points, t)
+            s = np.random.exponential(scale = 1/m)
+            ratio = hawkes_intensity(mu, alpha, points, t + s) / m
+            if ratio >= np.random.uniform():
+                points.append(t + s)
+            t = t + s
+        return np.array(points)
+
+    def makeIrregular(self, x, y, num_instances):
+        timesteps = []
+        values = []
+        for i in range(len(x)):
+            if y[i] == 0:
+                t_i = self.simulate_hawkes(self.mu, self.a_neg, num_instances)
+            else:
+                t_i = self.simulate_hawkes(self.mu, self.a_pos, num_instances)
+            x_i = self.getInterpolations(x[0].squeeze(), t_i)
+            timesteps.append(t_i)
+            values.append(x_i)
+        timesteps = np.stack(timesteps)
+        timesteps = (timesteps-timesteps.min(1)[:, None])/(timesteps.max(1)-timesteps.min(1))[:, None]
+        values = np.stack(values)
+        return timesteps, values
+
+    def loadData(self, name):
+        x_train = np.loadtxt(self._load_path+"{}/{}_TRAIN.txt".format(self._ucr_name, self._ucr_name))
+        x_test = np.loadtxt(self._load_path+"{}/{}_TEST.txt".format(self._ucr_name, self._ucr_name))
+        x = np.concatenate((x_train, x_test), 0)
+
+        # Separate labels and time series
+        y = x[:, 0] - 1
+        x = x[:, 1:]
+
+        # Shuffle
+        ix = np.random.choice(len(x), len(x), replace=False)
+        x = x[ix]
+        y = y[ix]
+
+        # Make irregular
+        t, v = self.makeIrregular(x, y, self.num_timesteps)
+        V, L = self.irregularize(t, v, self.num_timesteps)
+        t = torch.tensor(t, dtype=torch.float)
+        V = torch.tensor(V, dtype=torch.float)
+        y = torch.tensor(y, dtype=torch.long)
+        print(t.shape)
+        print(V.shape)
+        print(L.shape)
+        print(y.shape)
+        return V, y, L.float()
+
+class Computers(IrregularTimeSeries):
+    def __init__(self):
+        super(Computers, self).__init__()
+        self.NAME = "Computers"
+        self._load_path = self._data_path + "UCR/Computers/"
+        self.values, self.labels, self.intensities = self.loadData()
+        #self.timesteps, self.values, self.labels, self.intensities = self.loadData()
+        self.data_setting["N_FEATURES"] = 1
+        self.data_setting["N_CLASSES"] = 2
+
+    def loadData(self):
+        values = torch.load(self._load_path+"values.pt")
+        labels = torch.load(self._load_path+"labels.pt")
+        intensities = torch.load(self._load_path+"intensities.pt")
+        all_ix = np.arange(len(values))
+        np.random.shuffle(all_ix)
+        self.train_ix = all_ix[:int(len(values)*0.8)]
+        self.val_ix = all_ix[int(len(values)*0.8):]
+        self.test_ix = all_ix[int(len(values)*0.8):]
+        return values.float(), labels.long(), intensities.float()
+

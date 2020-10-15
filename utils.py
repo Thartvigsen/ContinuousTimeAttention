@@ -27,19 +27,90 @@ class MainWriter(object):
         self.datasets = [
             #"""PhysioNet()""",
             #"""UWave()""",
-            """InHospitalMortality()""",
-            """MVSynth()""",
+            #"""MVSynth()""",
+            #"""Computers()""",
+            #"""PersonActivity()""",
+            #"""InHospitalMortality()""",
+            
+            #"""HawkesIrregularUCR('Computers', a_neg=0.8, a_pos=0.1)""",
+            #"""HawkesIrregularUCR('Computers', a_neg=0.8, a_pos=0.2)""",
+            #"""HawkesIrregularUCR('Computers', a_neg=0.8, a_pos=0.3)""",
+            #"""HawkesIrregularUCR('Computers', a_neg=0.8, a_pos=0.4)""",
+            #"""HawkesIrregularUCR('Computers', a_neg=0.8, a_pos=0.5)""",
+            #"""HawkesIrregularUCR('Computers', a_neg=0.8, a_pos=0.6)""",
+            #"""HawkesIrregularUCR('Computers', a_neg=0.8, a_pos=0.7)""",
+            #"""HawkesIrregularUCR('Computers', a_neg=0.8, a_pos=0.8)""",
+
+            """MultiModalIrregularUCR('Computers', R=500)""",
+            #"""MultiModalIrregularUCR('Computers', R=450)""",
+            #"""MultiModalIrregularUCR('Computers', R=400)""",
+            #"""MultiModalIrregularUCR('Computers', R=350)""",
+            #"""MultiModalIrregularUCR('Computers', R=300)""",
+            #"""MultiModalIrregularUCR('Computers', R=250)""",
+            #"""MultiModalIrregularUCR('Computers', R=200)""",
+            #"""MultiModalIrregularUCR('Computers', R=150)""",
+            #"""MultiModalIrregularUCR('Computers', R=100)""",
+            #"""MultiModalIrregularUCR('Computers', R=50)""",
+
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=500)""",
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=490)""",
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=480)""",
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=470)""",
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=460)""",
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=450)""",
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=450)""",
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=400)""",
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=350)""",
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=300)""",
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=250)""",
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=200)""",
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=150)""",
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=100)""",
+            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=50)""",
+
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.05)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.1)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.15)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.2)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.25)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.3)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.35)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.4)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.45)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.5)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.55)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.6)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.65)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.7)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.75)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.8)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.85)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.9)""",
+            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.95)""",
         ]
 
-        self.metrics = """[Accuracy(), AUC_micro()]"""
+        self.metrics = """[Accuracy(), AUC_macro()]"""
 
         self.models = [
             #"""Interpolator(config, d.data_setting, adapter="linear", nref=10)""",
             #"""Interpolator(config, d.data_setting, adapter="linear", nref=140)""",
-            #"""Interpolator(config, d.data_setting, adapter="gaussian", nref=10)""",
             #"""Interpolator(config, d.data_setting, adapter="gaussian", nref=140)""",
-            """RNN(config, d.data_setting)""",
-            """CAT(config, d.data_setting, nref=10)""",
+            #"""RNN_interp(config, d.data_setting, nref=500)""",
+
+            #"""RNNSimple(config, d.data_setting)""",
+            #"""RNNDelta(config, d.data_setting)""",
+            #"""GRU_D(config, d.data_setting)""",
+            #"""IPN(config, d.data_setting, nref=500)""",
+            #"""RNN(config, d.data_setting)""",
+            """CAT(config, d.data_setting, nhop=3, nsample=50, scaling_factor=10, explore=False, intensity=True)""",
+            """CAT(config, d.data_setting, nhop=3, nsample=50, scaling_factor=10, explore=False, intensity=False)""",
+
+            #"""CAT(config, d.data_setting, nhop=3, nsample=10, explore=True, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=20, explore=True, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=20, scaling_factor=3, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=10, explore=True, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=20, explore=True, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=20, scaling_factor=3, explore=False, intensity=False)""",
             #"""PolicyFree(config, d.data_setting, nref=10)""",
         ]
 
@@ -131,7 +202,7 @@ class RegularGridInterpolator:
         denominator = torch.prod(torch.stack(overalls), dim=0)
         return numerator / denominator
 def attrToString(obj, prefix,
-                exclude_list=["NAME", "name", "desc", "training", "bsz",
+                exclude_list=["NAME", "name", "desc", "training", "bsz", "intensities",
                               "test_ix", "train_ix", "values", "timesteps",
                               "deltas", "masks", "epsilons", "val_ix", "r",
                               "device", "lengths", "ids", "values", "masks",
@@ -220,3 +291,117 @@ def makedir(dirname):
             os.makedirs(dirname)
     except:
         pass
+
+# I really want the likelihood of sampling to appear in clumps.. is that a markov process?
+class MarkovChain(object):
+    def __init__(self, transition_prob):
+        """
+        Initialize the MarkovChain instance.
+ 
+        Parameters
+        ----------
+        transition_prob: dict
+            A dict object representing the transition 
+            probabilities in Markov Chain. 
+            Should be of the form: 
+                {'state1': {'state1': 0.1, 'state2': 0.4}, 
+                 'state2': {...}}
+        """
+        self.transition_prob = transition_prob
+        self.states = list(transition_prob.keys())
+ 
+    def next_state(self, current_state):
+        """
+        Returns the state of the random variable at the next time 
+        instance.
+ 
+        Parameters
+        ----------
+        current_state: str
+            The current state of the system.
+        """
+        return np.random.choice(
+            self.states, 
+            p=[self.transition_prob[current_state][next_state] 
+               for next_state in self.states]
+        )
+ 
+    def generate_states(self, current_state, no=10):
+        """
+        Generates the next states of the system.
+ 
+        Parameters
+        ----------
+        current_state: str
+            The state of the current random variable.
+ 
+        no: int
+            The number of future states to generate.
+        """
+        future_states = []
+        for i in range(no):
+            next_state = self.next_state(current_state)
+            future_states.append(next_state)
+            current_state = next_state
+        return future_states
+
+def instantiate_markov(pos_to_neg, neg_to_pos):
+    """
+    Instantiate a Markov Chain.
+
+    Parameters
+    ----------
+    pos_to_neg: float between 0. and 1.
+        Probability of transitioning to negative state 
+        if current state is positive
+    neg_to_pos: float between 0. and 1.
+        Probability of transitioning from positivite state
+        if current state is negative
+    """
+    trans_prob = {}
+    trans_prob['Pos'] =  {'Pos': 1. - pos_to_neg, 'Neg': pos_to_neg}
+    trans_prob['Neg'] =  {'Pos': neg_to_pos, 'Neg': 1. - neg_to_pos}
+    markov_chain = MarkovChain(transition_prob=trans_prob)
+    
+    return markov_chain
+
+def get_markov_sequence(markov_chain, seq_length, start_state='Pos'):
+    """
+    Get a sequence generated from markov chain.
+
+    Parameters
+    ----------
+    markov_chain: Instantiated MarkovChain 
+        Output of instantiante_markov
+    seq_length: an int.
+        Length of desired output sequence
+    start_state: string, either 'Pos' or 'Neg'
+        Indicates whether markov chain starts in pos or neg state 
+    """
+    seq_string = markov_chain.generate_states('Pos', seq_length)
+    seq_binary = [ int(i == 'Pos') for i in seq_string]
+    
+    return np.array(seq_binary)
+
+def hawkes_intensity(mu, alpha, points, t):
+    """Find the hawkes intensity:
+    mu + alpha * sum( np.exp(-(t-s)) for s in points if s<=t )
+    """
+    p = np.array(points)
+    p = p[p <= t]
+    p = np.exp(p - t) * alpha
+    return mu + np.sum(p)
+
+def simulate_hawkes(mu, alpha, num_instances):
+    t = 0
+    points = []
+    all_samples = []
+    while len(points) < num_instances:
+        m = hawkes_intensity(mu, alpha, points, t)
+        s = np.random.exponential(scale = 1/m)
+        ratio = hawkes_intensity(mu, alpha, points, t + s) / m
+        if ratio >= np.random.uniform():
+            points.append(t + s)
+        all_samples.append(t + s)
+        t = t + s
+    return np.array(points), all_samples
