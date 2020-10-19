@@ -1060,10 +1060,12 @@ class ISTS(Dataset):
         for i in range(len(timesteps)):
             t = timesteps[i]
             v = values[i]
-            t, v, lam = self.resample(torch.tensor(t), torch.tensor(v), nref)
-            v = v.unsqueeze(1)
-            lam = torch.tensor(lam, dtype=torch.float).unsqueeze(1)
-            interpolated.append((v, lam))
+            t, v, lam = self.resample(torch.tensor(t, dtype=torch.float),
+                                      torch.tensor(v, dtype=torch.float),
+                                      nref)
+            v = v.reshape(-1, 1)
+            lam = lam.reshape(-1, 1)
+            interpolated.append((t.reshape(-1, 1), v, lam))
         return interpolated
 
     def valMaskPad(self, timesteps, values, nsteps):
@@ -1139,7 +1141,7 @@ class SeqLength(ISTS):
         self.nsamples_off_signal = T-self.nsamples_on_signal
         self.signal_start = np.ones(self.N)*0.4
         self.signal_end = self.signal_start + self.signal_length
-        self._imputed, self._interpolated, self._raw, self.labels = self.loadData(self.NAME)
+        self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
 
     def dome(self, t):
         """A dome defined in [0, 1]"""
@@ -1170,15 +1172,7 @@ class SeqLength(ISTS):
     
     @abstractmethod
     def getTimesteps(self, signal_start, signal_end):
-        #timesteps = np.random.uniform(signal_start, signal_end, self.nsamples_on_signal)
-        #nsamples_off_signal = self.T - self.nsamples_on_signal
-        #n_from_left = np.random.choice(self.T - self.nsamples_on_signal, 1).astype(np.int32)
-        #n_from_right = (self.T - self.nsamples_on_signal) - n_from_left
-        #left_samples = np.random.uniform(0, signal_start, (n_from_left))#[:, None]
-        #right_samples = np.random.uniform(signal_end, 1.0, (n_from_right))#[:, None]
-        #timesteps = np.concatenate((timesteps, left_samples, right_samples), 0)
-        #timesteps = np.sort(timesteps)    
-        return timesteps
+        pass
     
     def getTimestepsValuesLabels(self):
         timesteps = np.empty((self.N, self.T))
@@ -1196,7 +1190,7 @@ class SeqLength(ISTS):
         return timesteps, values, labels
         #return torch.tensor(timesteps, dtype=torch.float).unsqueeze(2), torch.tensor(values, dtype=torch.float).unsqueeze(2), torch.tensor(labels, dtype=torch.long)
 
-    def loadData(self, name):
+    def loadData(self):
         t, v, y = self.getTimestepsValuesLabels()
 
         # Shuffle

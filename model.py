@@ -235,10 +235,11 @@ class GRU_D(Model):
         return logits
 
 class CAT(Model):
-    def __init__(self, config, data_setting, nhop=3, intensity=True, ngran=2, nsample=20, scaling_factor=6,
+    def __init__(self, config, data_setting, nhop=3, intensity=True, ngran=2,
+                 nsample=100, scaling_factor=5,
                  gwidth=0.05, nemb=50, std=0.15, explore=False):
         super(CAT, self).__init__(config, data_setting)
-        self.NAME = "CAT_long"
+        self.NAME = "CAT"
         self.nhop = nhop # Number requested timesteps
         self.ngranularity = ngran # How many levels of granularity
         self.nsample = nsample # Number of timesteps to collect around l_t
@@ -266,7 +267,6 @@ class CAT(Model):
     def forward(self, data, epoch, test):
         # CAT takes in "interpolated"
         data = data[1]
-        print(len(data))
         t = data[0]
         v = data[1]
         l = data[2]

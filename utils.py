@@ -104,8 +104,8 @@ class MainWriter(object):
             #"""GRU_D(config, d.data_setting)""",
             #"""IPN(config, d.data_setting, nref=500)""",
             #"""RNN(config, d.data_setting)""",
-            """CAT(config, d.data_setting, nhop=3, nsample=50, scaling_factor=10, explore=False, intensity=True)""",
-            """CAT(config, d.data_setting, nhop=3, nsample=50, scaling_factor=10, explore=False, intensity=False)""",
+            """CAT(config, d.data_setting, nhop=3, nsample=100, scaling_factor=5, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=50, scaling_factor=10, explore=False, intensity=True)""",
 
             #"""CAT(config, d.data_setting, nhop=3, nsample=10, explore=True, intensity=True)""",
             #"""CAT(config, d.data_setting, nhop=3, nsample=20, explore=True, intensity=True)""",

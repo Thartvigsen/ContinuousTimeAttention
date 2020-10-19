@@ -11,15 +11,13 @@
 #srun --array=$1 main.sbatch
 
 # TURING
-export PYTHONPATH=/home/twhartvigsen/work/env3/bin/python3
-source /home/twhartvigsen/work/env3/bin/activate
-#export PYTHONPATH=../pytorchExp/env/bin/python
-#source ../pytorchExp/env/bin/activate
-sbatch --array=$1 main.sbatch
+#export PYTHONPATH=/home/twhartvigsen/work/env3/bin/python3
+#source /home/twhartvigsen/work/env3/bin/activate
+#sbatch --array=$1 main.sbatch
 
 # LOCAL
-#source /home/tom/Documents/workenv/bin/activate
-#python run_models.py --taskid=$1
+source /home/tom/Documents/env/bin/activate
+python main.py --taskid=$1
 
 ################################
 # How to use more GPUs?
