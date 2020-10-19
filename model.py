@@ -259,18 +259,18 @@ class CAT(Model):
         self.RNN = torch.nn.GRU(self.nemb, self.nhid, self.nlayers)
         self.predict = torch.nn.Linear(self.nhid, self._nclasses)
 
-    def d(self, T, l_t):
+    def denorm(self, T, l_t):
         #return ((0.5*(l_t + 1.0))*T)
         return T*0.5*(1+l_t)
 
     def forward(self, data, epoch, test):
         # CAT takes in "interpolated"
         data = data[1]
+        print(len(data))
         t = data[0]
         v = data[1]
         l = data[2]
         t_max = t[:, -1, :].squeeze()
-        #print(data[0][:, -1, :])
 
         if self.explore:
             if test:
@@ -286,31 +286,33 @@ class CAT(Model):
         glimpses = []
         
         # --- initial glimpse ---
-        l_t = torch.ones(self._bsz, 1).uniform_(-1, 1)
-        #l_t.requires_grad = False
+        loc = torch.ones(self._bsz, 1).uniform_(-1, 1)
+        loc.requires_grad = False
         #l_t = torch.mul(t_max, 0.5*(1+l_t.squeeze()))
         #l_t = self.d(t[:, -1, :].squeeze(), l_t.squeeze()) # Denormalize
         #print(t_max.dtype)
         #print(l_t.dtype)
         #print(type(t_max))
-        print(t_max*0.5*(1+l_t.squeeze()))
-        #l_t = t_max*0.5*(1+l_t.squeeze())
-        print(l_t.shape)
+        #print(t_max*0.5*(1+l_t.squeeze()))
+        #a = t_max*0.5*(1+l_t.squeeze())
+        #print(t_max)
+        #print(torch.ones((self._bsz), dtype=torch.float).uniform_(-1, 1))
+        #print(t_max*0.5*(torch.ones((self._bsz), dtype=torch.float).uniform_(-1, 1)))
+        #loc = t_max*(torch.ones(size=(self._bsz, 1), dtype=torch.float).uniform_(0, 1))
+        #loc = loc.unsqueeze(1)
+        #l_t = a
+        #l_t = t_max*0.5*(orch.ones((self._bsz), dtype=torch.float).uniform_(-1, 1))
+        #print(l_t.shape)
         hidden = self.initHidden(self._bsz)
-        reference_timesteps.append(l_t.squeeze())
+        reference_timesteps.append(self.denorm(t_max.squeeze(), loc.squeeze()))
         self.greps = []
         for i in range(self.nhop+1):
-            out, hidden, log_probs, l_t, b_t = self.CATCell(data, hidden, l_t)
-            #print(data[0].shape)
-            #print(torch.max(data[0], 1)[0].shape)
-            #l_t = self.GlimpseNetwork.denormalize(torch.max(data[0], 1)[0], l_t) # Denormalize
-            #l_t = self.GlimpseNetwork.denormalize(torch.max(data[0], 1)[0], l_t) # Denormalize
+            out, hidden, log_probs, loc, b_t = self.CATCell(data, hidden, loc)
             log_pi.append(log_probs)
             baselines.append(b_t)
-            reference_timesteps.append(l_t.squeeze())
+            reference_timesteps.append(self.denorm(t_max.squeeze(), loc.squeeze()))
             #glimpses.append(glimpse)
             
-        assert 2 == 3
         #self.greps = torch.stack(self.greps).squeeze()
         #self.glimpses = torch.stack(glimpses).squeeze().transpose(0, 1)[:, :-1] # B x R
         self.reference_timesteps = torch.stack(reference_timesteps).squeeze().transpose(0, 1)[:, :-2] # B x R

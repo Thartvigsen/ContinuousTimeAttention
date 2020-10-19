@@ -41,7 +41,7 @@ class MainWriter(object):
             #"""HawkesIrregularUCR('Computers', a_neg=0.8, a_pos=0.7)""",
             #"""HawkesIrregularUCR('Computers', a_neg=0.8, a_pos=0.8)""",
 
-            """MultiModalIrregularUCR('Computers', R=500)""",
+            #"""MultiModalIrregularUCR('Computers', R=500)""",
             #"""MultiModalIrregularUCR('Computers', R=450)""",
             #"""MultiModalIrregularUCR('Computers', R=400)""",
             #"""MultiModalIrregularUCR('Computers', R=350)""",
@@ -51,6 +51,8 @@ class MainWriter(object):
             #"""MultiModalIrregularUCR('Computers', R=150)""",
             #"""MultiModalIrregularUCR('Computers', R=100)""",
             #"""MultiModalIrregularUCR('Computers', R=50)""",
+
+            """SeqLengthUniform(T=50, N=500, nref=50)""",
 
             #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=500)""",
             #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=490)""",
@@ -206,7 +208,7 @@ def attrToString(obj, prefix,
                               "test_ix", "train_ix", "values", "timesteps",
                               "deltas", "masks", "epsilons", "val_ix", "r",
                               "device", "lengths", "ids", "values", "masks",
-                              "timesteps",
+                              "timesteps", "signal_start", "signal_end",
                               "data", "labels", "signal_locs", "round",
                               "train", "test", "train_labels", "test_labels",
                               "data_setting", "y_train", "y_test", "seq_length"]):

@@ -388,7 +388,7 @@ class GN(nn.Module):
         l_out = F.relu(self.fc2(l_t))
 
         if self.intensity:
-            intensity = x[1]
+            intensity = x[2]
             i_rep = self.Retina.foveate(intensity, l_t)
             i_out = F.relu(self.fc3(i_rep))
             g_t = F.relu(self.fc4(torch.cat((phi_out, l_out, i_out), 1)))
