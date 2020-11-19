@@ -63,7 +63,7 @@ class AUC_micro(metric):
         if len(true.shape) == 1:
             true = true.reshape(-1, 1)
         if true.shape[1] == 1:
-            true = self.toCategorical(true, 2).squeeze()
+            true = self.toCategorical(true, len(np.unique(true))).squeeze()
             # Eventually, true (NxC) and pred (N) worked
         return roc_auc_score(true.squeeze(), pred.squeeze(), average="micro")
 

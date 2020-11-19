@@ -204,6 +204,12 @@ class PhysioNet(Dataset):
         #self.train_ix = torch.linspace(0, len(self.ids)/2., len(self.ids)/2)
         #self.train_ix = torch.linspace(0, len(self.ids)/2., len(self.ids)/2)
         self.data = torch.stack([self.timesteps, self.values])
+        torch.save(self.timesteps, "./data/PhysioNet/physionet_timesteps.pt")
+        torch.save(self.values, "./data/PhysioNet/physionet_values.pt")
+        torch.save(self.labels, "./data/PhysioNet/physionet_labels.pt")
+        torch.save(self.masks, "./data/PhysioNet/physionet_masks.pt")
+        torch.save(self.diffs, "./data/PhysioNet/physionet_diffs.pt")
+        assert 2 == 3
         self.data_setting["N_FEATURES"] = self.data.shape[-1]
         self.data_setting["N_CLASSES"] = len(torch.unique(self.labels))
     
@@ -241,6 +247,7 @@ class PhysioNet(Dataset):
         timestamps = torch.zeros((len(data), MAX_LENGTH))
         values = torch.zeros((len(data), MAX_LENGTH, self._N_FEATURES))
         masks = torch.zeros((len(data), MAX_LENGTH, self._N_FEATURES))
+        diffs = torch.zeros((len(data), MAX_LENGTH, self._N_FEATURES))
         labels = torch.zeros(len(data))
         lengths = torch.zeros(len(data))
         for i, item in enumerate(data):
@@ -249,6 +256,7 @@ class PhysioNet(Dataset):
                 timestamps[i, :len(item[1])] = item[1]
                 values[i, :len(item[2])] = item[2]
                 masks[i, :len(item[3])] = item[3]
+                #diffs[i, :len(item[3])] = item[3]
                 labels[i] = item[4]
                 lengths[i] = len(item[1])
         return ids, timestamps, values, masks, labels.long(), lengths
@@ -811,7 +819,13 @@ class MultiModalIrregularUCR(IrregularTimeSeries):
         self._nmode_neg = R # Num distributions. Decrease to make signal come from patterns.
         self._nsteps_interp = 500
         self._nsteps_impute = R
-        self._imputed, self._interpolated, self._raw, self.labels = self.loadData(self.NAME)
+        self._imputed, self._interpolated, self._raw, self.labels, t, v = self.loadData(self.NAME)
+        print(self.labels)
+        assert 2 == 3
+        torch.save(t, "./{}_timesteps.pt".format(name))
+        torch.save(v, "./{}_values.pt".format(name))
+        torch.save(self.labels, "./{}_labels.pt".format(name))
+        assert 2 == 3
 
     def __getitem__(self, ix):
         return (self._imputed[ix], self._interpolated[ix], self._raw[ix]), self.labels[ix]
@@ -840,6 +854,7 @@ class MultiModalIrregularUCR(IrregularTimeSeries):
             #else:
             #    t = self.getTimesteps(self.R, self.nmode_neg)
             t = np.linspace(0, len(x[i]), self.R)
+            t = np.sort(np.random.uniform(0, len(x[i]), self.R))
             x_i = self.getInterpolations(x[i].squeeze(), t)
             timesteps.append(t)
             values.append(x_i)
@@ -914,8 +929,10 @@ class MultiModalIrregularUCR(IrregularTimeSeries):
         return imputed, interpolated, raw
 
     def loadData(self, name):
-        x_train = np.loadtxt(self._load_path+"{}/{}_TRAIN.txt".format(self._ucr_name, self._ucr_name))
-        x_test = np.loadtxt(self._load_path+"{}/{}_TEST.txt".format(self._ucr_name, self._ucr_name))
+        x_train = np.load(self._load_path+"{}/{}_TRAIN".format(self._ucr_name, self._ucr_name))
+        print(x_train.shape)
+        x_train = np.loadtxt(self._load_path+"{}/{}_TRAIN".format(self._ucr_name, self._ucr_name))
+        x_test = np.loadtxt(self._load_path+"{}/{}_TEST".format(self._ucr_name, self._ucr_name))
         x = np.concatenate((x_train, x_test), 0)
 
         # Separate labels and time series
@@ -931,8 +948,16 @@ class MultiModalIrregularUCR(IrregularTimeSeries):
         t, v = self.makeIrregular(x, y, self.R)
         imputed, interpolated, raw = self.prepISTS(t, v, self._nsteps_interp, self._nsteps_impute)
         #V, L = self.irregularize(t, v, self.num_instances)
+        #raw = torch.stack(raw)
+        t = []
+        v = []
+        for i in range(len(raw)):
+            t.append(raw[i][0])
+            v.append(raw[i][1])
+        t = torch.stack(t)
+        v = torch.stack(v)
         y = torch.tensor(y, dtype=torch.long)
-        return imputed, interpolated, raw, y
+        return imputed, interpolated, raw, y, t, v
         #return V.float(), y, L.float()
 
 class HawkesIrregularUCR(IrregularTimeSeries):
@@ -1034,6 +1059,7 @@ class Computers(IrregularTimeSeries):
 class ISTS(Dataset):
     def __init__(self, nref):
         super(ISTS, self).__init__()
+        self.data_setting["num_timesteps"] = self.T # Write over this in new dataset
         self.nref = nref
         #self.nsteps_interp = ninterp
         #self.nsteps_impute = nimpute
@@ -1041,10 +1067,10 @@ class ISTS(Dataset):
     def __getitem__(self, ix):
         return (self._imputed[ix], self._interpolated[ix], self._raw[ix]), self.labels[ix]
 
-    def getIntensity(self, t, r, alpha=0.1):
+    def getIntensity(self, t, r, alpha=0.01):
         r = r.unsqueeze(1).repeat(1, t.shape[0]) # Add a column of all r values for each of t timesteps
         dist = torch.exp(torch.mul(-alpha, 1*torch.sub(r, t).pow(2)))    
-        return dist.sum(1)
+        return dist.sum(1)/len(dist)
 
     def resample(self, t, v, R):
         new_r = torch.linspace(t.min(), t.max(), R)
@@ -1116,30 +1142,31 @@ class ISTS(Dataset):
         #interpolated = tuple([torch.tensor(i, dtype=torch.float) for i in interpolated])
 
         timesteps = [torch.tensor(i, dtype=torch.float) for i in timesteps]
-        #lengths = []
-        #for item in timesteps:
-        #    lengths.append(len(item))
-        #lengths = torch.tensor(np.array(lengths))
+        lengths = []
+        for item in timesteps:
+            lengths.append(len(item))
+        lengths = torch.tensor(np.array(lengths))
         timesteps = pad_sequence(timesteps).T.unsqueeze(2)
         values = [torch.tensor(i, dtype=torch.float) for i in values]
         values = pad_sequence(values).T.unsqueeze(2)
         raw = []
         for i in range(len(timesteps)):
-            raw.append((timesteps[i], values[i]))#, lengths[i]))
+            raw.append((timesteps[i], values[i], lengths[i]))
 
         return imputed, interpolated, raw
 
 class SeqLength(ISTS):
     def __init__(self, T, N, nref):
-        #self.NAME = "SyntheticSeqLength"
+        self.T = T
+        self._N = N
         super(SeqLength, self).__init__(nref)
         self._load_path = self._data_path + "SeqLength/{}/".format(self.NAME)
-        self.T = T
-        self.N = N
-        self.signal_length = .2
+        self._tmax = 1.
+        self.signal_prop = 0.1 # Proportion of timesteps taken by signal
+        self.signal_length = self._tmax*self.signal_prop
         self.nsamples_on_signal = 20
-        self.nsamples_off_signal = T-self.nsamples_on_signal
-        self.signal_start = np.ones(self.N)*0.4
+        self.signal_start = np.random.uniform(0, self._tmax-self.signal_length, self._N)
+        #self.signal_start = np.ones(self.N)*0.4
         self.signal_end = self.signal_start + self.signal_length
         self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
 
@@ -1159,15 +1186,15 @@ class SeqLength(ISTS):
         values = np.zeros(len(timesteps))
         for i in range(len(timesteps)):
             if timesteps[i] < signal_start: # Left of signal
-                values[i] = np.random.normal(0, 0.01)
+                values[i] = np.random.normal(0, 0.1)
             elif ((timesteps[i] >= signal_start) & (timesteps[i] < (signal_start+self.signal_length))): # On signal
                 if dome:
                     values[i] = self.dome(timesteps[i]-signal_start)
                 else:
                     values[i] = self.spike((timesteps[i]-signal_start)/self.signal_length)
-                values[i] += np.random.normal(0, .0, 1)
+                #values[i] += np.random.normal(0, .0, 1)
             else: # Right of signal
-                values[i] = np.random.normal(0, 0.01)
+                values[i] = np.random.normal(0, 0.1)
         return values
     
     @abstractmethod
@@ -1175,23 +1202,225 @@ class SeqLength(ISTS):
         pass
     
     def getTimestepsValuesLabels(self):
-        timesteps = np.empty((self.N, self.T))
-        values = np.empty((self.N, self.T))
-        labels = np.empty((self.N))
-        for i in range(self.N):
+        timesteps = np.empty((self._N, self.T))
+        values = np.empty((self._N, self.T))
+        labels = np.empty((self._N))
+        for i in range(self._N):
             t = self.getTimesteps(self.signal_start[i], self.signal_end[i])
-            if i <= int(self.N/2): # Dome
+            timesteps[i, :] = t
+            if i <= int(self._N/2): # Dome
                 values[i, :] = self.createSignal(t, self.signal_start[i], dome=True)
                 labels[i] = 0
             else: # Table
                 values[i, :] = self.createSignal(t, self.signal_start[i], dome=False)
                 labels[i] = 1
-            timesteps[i, :] = t
         return timesteps, values, labels
         #return torch.tensor(timesteps, dtype=torch.float).unsqueeze(2), torch.tensor(values, dtype=torch.float).unsqueeze(2), torch.tensor(labels, dtype=torch.long)
 
     def loadData(self):
         t, v, y = self.getTimestepsValuesLabels()
+
+        # Shuffle
+        ix = np.random.choice(self._N, self._N, replace=False)
+        t = t[ix]
+        v = v[ix]
+        y = y[ix]
+
+        # Make irregular
+        imputed, interpolated, raw = self.prepISTS(t, v, self.nref)
+        y = torch.tensor(y, dtype=torch.long)
+        return imputed, interpolated, raw, y
+
+class SeqLengthUniform(SeqLength):
+    def __init__(self, T=50, N=500, nref=50):
+        self.NAME = "SyntheticSeqLengthUniform_all"
+        super(SeqLengthUniform, self).__init__(T=T, N=N, nref=nref)
+
+    # First, I want to get timesteps THIS way
+    def getTimesteps(self, signal_start, signal_end):
+        timesteps = np.random.uniform(signal_start, signal_end, self.nsamples_on_signal)
+        nsamples_off_signal = self.T - self.nsamples_on_signal
+        n_from_left = np.random.choice(nsamples_off_signal, 1).astype(np.int32)
+        n_from_right = nsamples_off_signal - n_from_left
+        left_samples = np.random.uniform(0, signal_start, (n_from_left))#[:, None]
+        right_samples = np.random.uniform(signal_end, 1.0, (n_from_right))#[:, None]
+        timesteps = np.concatenate((timesteps, left_samples, right_samples), 0)
+        timesteps = np.sort(timesteps)    
+        return timesteps
+
+class ValObs(ISTS):
+    def __init__(self, T, N, nref):
+        self.T = T
+        self._N = N
+        super(ValObs, self).__init__(nref)
+        self._load_path = self._data_path + "SeqLength/{}/".format(self.NAME)
+        self._tmax = 1.
+        self.signal_prop = 0.1 # Proportion of timesteps taken by signal
+        self.signal_length = self._tmax*self.signal_prop
+        self.nsamples_on_signal = 20
+        self.signal_start = np.random.uniform(0, self._tmax-self.signal_length, self._N)
+        self.data_setting["N_CLASSES"] = 4 # Write over this in new dataset
+        #self.signal_start = np.ones(self.N)*0.4
+        self.signal_end = self.signal_start + self.signal_length
+        self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+
+    def dome(self, t):
+        """A dome defined in [0, 1]"""
+        return .5*np.sin(np.pi*t/self.signal_length)
+
+    def spike(self, t):
+        """A spike defined in [0, 1] with a peak of 1.0"""
+        if t < .5:
+            return 1.0*t
+        else:
+            return -1.0*t + 1.0
+
+    def createSignal(self, timesteps, signal_start, dome=True):
+        """Piecewise function - sampling points from signals at different locations in the time series."""
+        values = np.zeros(len(timesteps))
+        for i in range(len(timesteps)):
+            if timesteps[i] < signal_start: # Left of signal
+                values[i] = np.random.normal(0, 0.1)
+            elif ((timesteps[i] >= signal_start) & (timesteps[i] < (signal_start+self.signal_length))): # On signal
+                if dome:
+                    values[i] = self.dome(timesteps[i]-signal_start)
+                else:
+                    values[i] = self.spike((timesteps[i]-signal_start)/self.signal_length)
+                #values[i] += np.random.normal(0, .0, 1)
+            else: # Right of signal
+                values[i] = np.random.normal(0, 0.1)
+        return values
+    
+    @abstractmethod
+    def getTimesteps(self, signal_start, signal_end):
+        pass
+    
+    def getTimestepsValuesLabels(self):
+        timesteps = np.empty((self._N, self.T))
+        values = np.empty((self._N, self.T))
+        labels = np.empty((self._N))
+        for i in range(self._N):
+            if i <= int(self._N/4): # Sparse/Dome
+                t = self.getTimesteps(self.signal_start[i], self.signal_end[i], uniform=True)
+                values[i, :] = self.createSignal(t, self.signal_start[i], dome=True)
+                labels[i] = 0
+            elif (i > int(self._N/4)) and (i <= int(self._N/2)): # Dense/Dome
+                t = self.getTimesteps(self.signal_start[i], self.signal_end[i], uniform=False)
+                values[i, :] = self.createSignal(t, self.signal_start[i], dome=True)
+                labels[i] = 1
+            elif (i > int(self._N/2)) and (i <= 3*int(self._N/4)): # Sparse/Spike
+                t = self.getTimesteps(self.signal_start[i], self.signal_end[i], uniform=True)
+                values[i, :] = self.createSignal(t, self.signal_start[i], dome=False)
+                labels[i] = 2
+            else: # Dense/Spike
+                t = self.getTimesteps(self.signal_start[i], self.signal_end[i], uniform=False)
+                values[i, :] = self.createSignal(t, self.signal_start[i], dome=False)
+                labels[i] = 3
+            timesteps[i, :] = t
+        values[np.isnan(values)] = 0.0
+        return timesteps, values, labels
+
+    def loadData(self):
+        t, v, y = self.getTimestepsValuesLabels()
+        t = 10.*t # Scale timesteps up
+
+        # Shuffle
+        ix = np.random.choice(self._N, self._N, replace=False)
+        t = t[ix]
+        v = v[ix]
+        y = y[ix]
+
+        # Make irregular
+        imputed, interpolated, raw = self.prepISTS(t, v, self.nref)
+        y = torch.tensor(y, dtype=torch.long)
+        return imputed, interpolated, raw, y
+
+class SyntheticValObs(ValObs):
+    def __init__(self, T=50, N=500, nref=50):
+        self.NAME = "SyntheticValObs3"
+        super(SyntheticValObs, self).__init__(T=T, N=N, nref=nref)
+
+    # Now, I want to get timesteps according to the class
+    def getTimesteps(self, signal_start, signal_end, uniform=True):
+        timesteps = np.random.uniform(signal_start, signal_end, self.nsamples_on_signal)
+        nsamples_off_signal = self.T - self.nsamples_on_signal
+        n_from_left = np.random.choice(nsamples_off_signal, 1).astype(np.int32)
+        n_from_right = nsamples_off_signal - n_from_left
+        if uniform:
+            left_samples = np.random.uniform(0, signal_start, (n_from_left))#[:, None]
+            right_samples = np.random.uniform(signal_end, 1.0, (n_from_right))#[:, None]
+        else: # not uniform
+            left_samples = np.random.normal(signal_start/2.0, 0.5, (n_from_left)).clip(0, signal_start)
+            right_samples = np.random.normal((1.0-signal_end)/2.0, 0.5, (n_from_right)).clip(signal_end, 1.0)#[:, None]
+        timesteps = np.concatenate((timesteps, left_samples, right_samples), 0)
+        timesteps = np.sort(timesteps)    
+        return timesteps
+
+    def getDenseTimesteps(self, N, nmode):
+        assert nmode <= N, "nmode must be <= to N"
+        std = 1/(4*nmode)
+        mus = torch.linspace(std, 1-std, nmode)
+        n_per_mode = N//nmode
+        timesteps = []
+        for n in range(nmode):
+            timesteps.append(np.random.normal(mus[n], std, n_per_mode).squeeze())
+        timesteps = np.stack(timesteps).reshape(-1)
+        if ((n_per_mode)*nmode) < N:
+            extra_timesteps = np.random.uniform(0, 1, N-((n_per_mode)*nmode))
+            timesteps = np.concatenate((timesteps, extra_timesteps), 0)
+        return np.sort(np.clip(timesteps, 0, 1))
+
+class MTable(ISTS):
+    def __init__(self, T=50, N=500, nref=500):
+        #self.nref = 500
+        self.T = T
+        self.N = N
+        self.NAME = "MTable2"
+        super(MTable, self).__init__(nref=nref)
+        self.M = np.array([1, 0, 1])
+        self.table = np.array([1, 1, 1])
+        self.delta = 0.015
+        self.t0 = np.random.uniform(0, 1-2*self.delta, self.N)
+        self.stop = self.t0 + 2*self.delta
+        #self.timesteps, self.values, self.labels = self.generateData()
+        self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+
+    def createSignal(self, t0, v):
+        timesteps = np.array([t0, t0+self.delta, t0+2*self.delta])[:, None]
+        values = np.concatenate((v, np.random.normal(0, 1, size=(self.T-3))))
+        #values = np.concatenate((v, np.zeros(self.T-3)))
+        n_from_left = np.random.choice(self.T-3, 1).astype(np.int32)
+        n_from_left = ((self.T*t0)).astype(np.int32)
+        n_from_right = (self.T-3) - n_from_left
+        left_samples = np.random.uniform(0, t0, (n_from_left))[:, None]
+        right_samples = np.random.uniform(t0+2*self.delta, 1.0, (n_from_right))[:, None]
+        timesteps = np.concatenate((timesteps, left_samples, right_samples), 0)
+        sorted_ix = np.argsort(timesteps, 0).squeeze()
+        timesteps = timesteps[sorted_ix]
+        values = values[sorted_ix]
+        return timesteps.squeeze(), values
+    
+    def getTimestepsValuesLabels(self):
+        timesteps = []
+        values = []
+        labels = []
+        for i in range(self.N):
+            if i <= int(self.N/2): # Table
+                t_i, v_i = self.createSignal(t0=self.t0[i], v=self.table)
+                labels.append(0)
+            else: # M
+                t_i, v_i = self.createSignal(t0=self.t0[i], v=self.M)
+                labels.append(1)
+            timesteps.append(t_i)
+            values.append(v_i)
+        return np.stack(timesteps), np.stack(values), np.stack(labels)
+        #return torch.tensor(np.stack(timesteps), dtype=torch.float).unsqueeze(2), torch.tensor(np.stack(values), dtype=torch.float).unsqueeze(2), torch.tensor(np.stack(labels), dtype=torch.long)
+
+    def loadData(self):
+        t, v, y = self.getTimestepsValuesLabels()
+        #t = np.expand_dims(t, 2)
+        #v = np.expand_dims(v, 2)
+        #t = 10.*t # Scale timesteps up
 
         # Shuffle
         ix = np.random.choice(self.N, self.N, replace=False)
@@ -1204,19 +1433,96 @@ class SeqLength(ISTS):
         y = torch.tensor(y, dtype=torch.long)
         return imputed, interpolated, raw, y
 
-class SeqLengthUniform(SeqLength):
+class MTableUniform(MTable):
     def __init__(self, T=50, N=500, nref=50):
-        self.NAME = "SyntheticSeqLengthUniform"
-        super(SeqLengthUniform, self).__init__(T=T, N=N, nref=nref)
+        self.NAME = "MTableUniform"
+        super(MTableUniform, self).__init__(T=T, N=N, nref=nref)
 
     # First, I want to get timesteps THIS way
     def getTimesteps(self, signal_start, signal_end):
         timesteps = np.random.uniform(signal_start, signal_end, self.nsamples_on_signal)
         nsamples_off_signal = self.T - self.nsamples_on_signal
-        n_from_left = np.random.choice(self.T - self.nsamples_on_signal, 1).astype(np.int32)
-        n_from_right = (self.T - self.nsamples_on_signal) - n_from_left
+        n_from_left = np.random.choice(nsamples_off_signal, 1).astype(np.int32)
+        n_from_right = nsamples_off_signal - n_from_left
         left_samples = np.random.uniform(0, signal_start, (n_from_left))#[:, None]
         right_samples = np.random.uniform(signal_end, 1.0, (n_from_right))#[:, None]
         timesteps = np.concatenate((timesteps, left_samples, right_samples), 0)
         timesteps = np.sort(timesteps)    
         return timesteps
+
+
+#class MTable(ISTS):
+#    def __init__(self, T, N, nref):
+#        self.T = T
+#        self._N = N
+#        super(MTable, self).__init__(nref)
+#        self._load_path = self._data_path + "SeqLength/{}/".format(self.NAME)
+#        self._tmax = 1.
+#        self.signal_prop = 0.1 # Proportion of timesteps taken by signal
+#        self.signal_length = self._tmax*self.signal_prop
+#        self.nsamples_on_signal = 20
+#        self.signal_start = np.random.uniform(0, self._tmax-self.signal_length, self._N)
+#        #self.signal_start = np.ones(self.N)*0.4
+#        self.signal_end = self.signal_start + self.signal_length
+#        self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+#
+#    def dome(self, t):
+#        """A dome defined in [0, 1]"""
+#        return .5*np.sin(np.pi*t/self.signal_length)
+#
+#    def spike(self, t):
+#        """A spike defined in [0, 1] with a peak of 1.0"""
+#        if t < .5:
+#            return 1.0*t
+#        else:
+#            return -1.0*t + 1.0
+#
+#    def createSignal(self, timesteps, signal_start, dome=True):
+#        """Piecewise function - sampling points from signals at different locations in the time series."""
+#        values = np.zeros(len(timesteps))
+#        for i in range(len(timesteps)):
+#            if timesteps[i] < signal_start: # Left of signal
+#                values[i] = np.random.normal(0, 0.1)
+#            elif ((timesteps[i] >= signal_start) & (timesteps[i] < (signal_start+self.signal_length))): # On signal
+#                if dome:
+#                    values[i] = self.dome(timesteps[i]-signal_start)
+#                else:
+#                    values[i] = self.spike((timesteps[i]-signal_start)/self.signal_length)
+#                #values[i] += np.random.normal(0, .0, 1)
+#            else: # Right of signal
+#                values[i] = np.random.normal(0, 0.1)
+#        return values
+#    
+#    @abstractmethod
+#    def getTimesteps(self, signal_start, signal_end):
+#        pass
+#    
+#    def getTimestepsValuesLabels(self):
+#        timesteps = np.empty((self._N, self.T))
+#        values = np.empty((self._N, self.T))
+#        labels = np.empty((self._N))
+#        for i in range(self._N):
+#            t = self.getTimesteps(self.signal_start[i], self.signal_end[i])
+#            timesteps[i, :] = t
+#            if i <= int(self._N/2): # Dome
+#                values[i, :] = self.createSignal(t, self.signal_start[i], dome=True)
+#                labels[i] = 0
+#            else: # Table
+#                values[i, :] = self.createSignal(t, self.signal_start[i], dome=False)
+#                labels[i] = 1
+#        return timesteps, values, labels
+#        #return torch.tensor(timesteps, dtype=torch.float).unsqueeze(2), torch.tensor(values, dtype=torch.float).unsqueeze(2), torch.tensor(labels, dtype=torch.long)
+#
+#    def loadData(self):
+#        t, v, y = self.getTimestepsValuesLabels()
+#
+#        # Shuffle
+#        ix = np.random.choice(self._N, self._N, replace=False)
+#        t = t[ix]
+#        v = v[ix]
+#        y = y[ix]
+#
+#        # Make irregular
+#        imputed, interpolated, raw = self.prepISTS(t, v, self.nref)
+#        y = torch.tensor(y, dtype=torch.long)
+#        return imputed, interpolated, raw, y

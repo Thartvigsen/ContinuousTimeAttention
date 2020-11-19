@@ -52,7 +52,19 @@ class MainWriter(object):
             #"""MultiModalIrregularUCR('Computers', R=100)""",
             #"""MultiModalIrregularUCR('Computers', R=50)""",
 
-            """SeqLengthUniform(T=50, N=500, nref=50)""",
+            #"""SeqLengthUniform(T=50, N=5000, nref=100)""",
+            #"""SeqLengthUniform(T=100, N=5000, nref=100)""",
+            #"""SeqLengthUniform(T=150, N=5000, nref=100)""",
+            #"""SeqLengthUniform(T=200, N=5000, nref=100)""",
+            #"""SeqLengthUniform(T=250, N=5000, nref=100)""",
+            #"""SeqLengthUniform(T=300, N=5000, nref=100)""",
+            #"""SeqLengthUniform(T=350, N=5000, nref=100)""",
+            #"""SeqLengthUniform(T=400, N=5000, nref=100)""",
+            #"""SeqLengthUniform(T=450, N=5000, nref=100)""",
+            #"""SeqLengthUniform(T=500, N=5000, nref=100)""",
+
+            """MTable(T=500, N=5000, nref=500)""",
+            #"""SyntheticValObs(T=500, N=5000, nref=500)""",
 
             #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=500)""",
             #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=490)""",
@@ -91,7 +103,8 @@ class MainWriter(object):
             #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.95)""",
         ]
 
-        self.metrics = """[Accuracy(), AUC_macro()]"""
+        self.metrics = """[Accuracy()]"""
+        #self.metrics = """[Accuracy(), AUC_macro()]"""
 
         self.models = [
             #"""Interpolator(config, d.data_setting, adapter="linear", nref=10)""",
@@ -99,13 +112,19 @@ class MainWriter(object):
             #"""Interpolator(config, d.data_setting, adapter="gaussian", nref=140)""",
             #"""RNN_interp(config, d.data_setting, nref=500)""",
 
-            #"""RNNSimple(config, d.data_setting)""",
-            #"""RNNDelta(config, d.data_setting)""",
-            #"""GRU_D(config, d.data_setting)""",
-            #"""IPN(config, d.data_setting, nref=500)""",
-            #"""RNN(config, d.data_setting)""",
-            """CAT(config, d.data_setting, nhop=3, nsample=100, scaling_factor=5, explore=False, intensity=False)""",
-            #"""CAT(config, d.data_setting, nhop=3, nsample=50, scaling_factor=10, explore=False, intensity=True)""",
+            """RNNVals(config, d.data_setting)""",
+            """RNNValsGaps(config, d.data_setting)""",
+            """RNNInterp(config, d.data_setting, nref=500)""",
+            """RNNSimple(config, d.data_setting)""",
+            """RNN(config, d.data_setting)""",
+            """RNNDelta(config, d.data_setting)""",
+            """GRU_D(config, d.data_setting)""",
+            """IPN(config, d.data_setting, nref=500)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.1, scaling_factor=10, explore=False, intensity=False)""",
+            """CAT(config, d.data_setting, nhop=3, nsample=0.05, scaling_factor=20, explore=False, intensity=False)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=3, nsample=0.05, scaling_factor=20, explore=False, intensity=False)""",
+            """CAT(config, d.data_setting, nhop=3, nsample=0.05, scaling_factor=20, explore=True, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.1, scaling_factor=10, explore=False, intensity=True)""",
 
             #"""CAT(config, d.data_setting, nhop=3, nsample=10, explore=True, intensity=True)""",
             #"""CAT(config, d.data_setting, nhop=3, nsample=20, explore=True, intensity=True)""",
@@ -203,10 +222,12 @@ class RegularGridInterpolator:
                 torch.prod(torch.stack(bs_s), dim=0)
         denominator = torch.prod(torch.stack(overalls), dim=0)
         return numerator / denominator
+
 def attrToString(obj, prefix,
                 exclude_list=["NAME", "name", "desc", "training", "bsz", "intensities",
                               "test_ix", "train_ix", "values", "timesteps",
                               "deltas", "masks", "epsilons", "val_ix", "r",
+                              "M", "t0", "stop", "delta", "table",
                               "device", "lengths", "ids", "values", "masks",
                               "timesteps", "signal_start", "signal_end",
                               "data", "labels", "signal_locs", "round",

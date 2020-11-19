@@ -5,15 +5,11 @@
 #SBATCH --mem=10GB                # memory pool for all cores
 #SBATCH -t 0-24:00                # time (D-HH:MM)
 ##SBATCH --exclude=compute-0-01
-#SBATCH --checkpoint=5
-#SBATCH --checkpoint-dir=checkpoints
 #SBATCH --gres=gpu:0              # number of GPU
 #SBATCH --job-name=main
 #SBATCH -o slurm-main-output%a    # STDOUT
 #SBATCH -e slurm-main-error%a     # STDERR
-##SBATCH --mail-type=END
-##SBATCH --mail-user=twhartvigsen@wpi.edu
 
-export PYTHONPATH=../pytorchExp/env3/bin/python
-source ../pytorchExp/env3/bin/activate
+##export PYTHONPATH=../pytorchExp/env3/bin/python
+##source ../pytorchExp/env3/bin/activate
 python main.py --taskid=${SLURM_ARRAY_TASK_ID} #--num_gpu=1

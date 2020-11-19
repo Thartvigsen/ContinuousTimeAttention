@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from utils import *
 import numpy as np
 import time
+from torch.nn.utils.rnn import pad_sequence
 
 class Model(nn.Module):
     def __init__(self, config, data_setting):
@@ -52,6 +53,9 @@ class RNN(Model):
         # RNN takes in "imputed"
         x, m, d = data[0]
 
+        print(x[0, :, ].squeeze())
+        assert 2 == 3
+
         B, T, V = x.shape # Assume timesteps x batch x variables input
         #k = x.shape[1] // self.nref
         #x = F.avg_pool1d(x.transpose(1, 2), k).transpose(1, 2)
@@ -62,6 +66,58 @@ class RNN(Model):
         hidden = self.initHidden(B)
         out, hidden = self.RNNCell(x, hidden)
         logits = self.predict(out[-1]).squeeze()
+        return logits
+
+class RNNVals(Model):
+    def __init__(self, config, data_setting):
+        super(RNNVals, self).__init__(config=config,
+                                  data_setting=data_setting)
+        self.NAME = "RNN_vals"
+
+        # --- Mappings ---
+        self.RNNCell = nn.GRU(self._ninp, self.nhid, self.nlayers)
+        self.predict = nn.Linear(self.nhid, self._nclasses)
+    
+    def forward(self, data, **kwargs):
+        # RNN takes in "imputed"
+        _, v, lengths = data[2]
+        B, T, V = v.shape # Assume timesteps x batch x variables input
+
+        v = v.transpose(0, 1) # sequence first
+        pack = torch.nn.utils.rnn.pack_padded_sequence(v, lengths, batch_first=False)
+        self.reference_timesteps = torch.zeros(T)
+        hidden = self.initHidden(B)
+        out, hidden = self.RNNCell(pack, hidden)
+        unpacked, unpacked_len = torch.nn.utils.rnn.pad_packed_sequence(out, batch_first=False)
+        logits = self.predict(unpacked[-1]).squeeze()
+        return logits
+
+class RNNValsGaps(Model):
+    def __init__(self, config, data_setting):
+        super(RNNValsGaps, self).__init__(config=config,
+                                          data_setting=data_setting)
+        self.NAME = "RNN_vals_gaps"
+
+        # --- Mappings ---
+        self.RNNCell = nn.GRU(self._ninp*2, self.nhid, self.nlayers)
+        self.predict = nn.Linear(self.nhid, self._nclasses)
+    
+    def forward(self, data, **kwargs):
+        # RNN takes in "imputed"
+        t, v, lengths = data[2]
+        B, T, V = t.shape # Assume timesteps x batch x variables input
+
+        t = t.transpose(0, 1) # sequence first
+        v = v.transpose(0, 1) # sequence first
+        diffs = t[1:] - t[:-1]
+        diffs = torch.cat((torch.zeros((1, B, V)), diffs), dim=0)
+        x = torch.cat((v, diffs), dim=2)
+        pack = torch.nn.utils.rnn.pack_padded_sequence(x, lengths, batch_first=False)
+        self.reference_timesteps = torch.zeros(T)
+        hidden = self.initHidden(B)
+        out, hidden = self.RNNCell(pack, hidden)
+        unpacked, unpacked_len = torch.nn.utils.rnn.pad_packed_sequence(out, batch_first=False)
+        logits = self.predict(unpacked[-1]).squeeze()
         return logits
 
 class RNNSimple(Model):
@@ -111,10 +167,11 @@ class RNNDelta(Model):
         return logits
 
 class RNNInterp(Model):
-    def __init__(self, config, data_setting):
+    def __init__(self, config, data_setting, nref):
         super(RNNInterp, self).__init__(config=config,
                                   data_setting=data_setting)
         self.NAME = "RNNInterp"
+        self.nref = nref
 
         # --- Mappings ---
         self.RNNCell = nn.GRU(self._ninp, self.nhid, self.nlayers)
@@ -122,10 +179,11 @@ class RNNInterp(Model):
     
     def forward(self, data, **kwargs):
         # RNN_interp takes in "interpolated"
-        x, l = data[1]
+        t, x, l = data[1]
 
         B, T, V = x.shape # Assume timesteps x batch x variables input
         x = x.transpose(0, 1) # sequence first
+        x = x.reshape(-1, T//self.nref, B, V).mean(1)
         self.reference_timesteps = torch.zeros(T)
         hidden = self.initHidden(B)
         out, hidden = self.RNNCell(x, hidden)
@@ -143,28 +201,14 @@ class FilterLinear(nn.Module):
         
         self.linear_filter = nn.Linear(in_features, out_features)
         self.linear_filter.weight = torch.nn.Parameter(self.linear_filter.weight * torch.eye(in_features))
-
-        #self.filter_square_matrix = torch.tensor(filter_square_matrix,
-        #                                         dtype=torch.float,
-        #                                         requires_grad=False)
-        #
-        #self.weight = Parameter(torch.Tensor(out_features, in_features))
-        #if bias:
-        #    self.bias = Parameter(torch.Tensor(out_features))
-        #else:
-        #    self.register_parameter('bias', None)
         self.reset_parameters()
 
     def reset_parameters(self):
         stdv = 1. / math.sqrt(self.linear_filter.weight.size(1))
         self.linear_filter.weight.data.uniform_(-stdv, stdv)
         self.linear_filter.bias.data.uniform_(-stdv, stdv)
-#         print(self.weight.data)
-#         print(self.bias.data)
 
     def forward(self, matrix):
-        #print(self.filter_square_matrix.mul(self.weight))
-        #return F.linear(input, self.filter_square_matrix.mul(self.weight), self.bias)
         return self.linear_filter(matrix)
 
 class GRU_D(Model):
@@ -187,7 +231,6 @@ class GRU_D(Model):
                                     self._ninp,
                                     self._identity)
         self.gamma_h = nn.Linear(self._ninp, self.nhid)
-        #self.rnn = self.initRNN(combined_dim, self.nhid)
 
     def gru_d_cell(self, x, h, m, dt, x_prime):
         # --- compute decays ---
@@ -219,11 +262,8 @@ class GRU_D(Model):
         masks = masks.transpose(0, 1)
         diffs = diffs.transpose(0, 1)
         T, B, V = vals.shape
-        #self._x_mean = self._x_mean[:self._input_dim]
-        self._x_mean = vals.mean(0) # Mean over timesteps
-        #h = self.initHidden(B)
+        self._x_mean = vals.mean(0) # Mean over timesteps (B x V)
         h = torch.zeros(self.nlayers, B, self.nhid)
-        #h.requires_grad = True
         x_prime = torch.zeros(self._ninp)
         for t in range(T):
             x = vals[t].unsqueeze(0)
@@ -231,19 +271,19 @@ class GRU_D(Model):
             diff = diffs[t].unsqueeze(0)
             h, x_prime = self.gru_d_cell(x, h, m, diff, x_prime)
 
-        logits = self.out(h).squeeze(0) # Remove time dimension
+        logits = self.out(h.squeeze(0)) # Remove time dimension
         return logits
 
 class CAT(Model):
     def __init__(self, config, data_setting, nhop=3, intensity=True, ngran=2,
-                 nsample=100, scaling_factor=5,
-                 gwidth=0.05, nemb=50, std=0.15, explore=False):
+                 nsample=0.2, scaling_factor=5, nemb=50, std=0.15, explore=False):
         super(CAT, self).__init__(config, data_setting)
+        self._T = data_setting["num_timesteps"]
         self.NAME = "CAT"
-        self.nhop = nhop # Number requested timesteps
+        self.nhop = nhop # Number of steps to take
         self.ngranularity = ngran # How many levels of granularity
         self.nsample = nsample # Number of timesteps to collect around l_t
-        self.gwidth = gwidth # How big steps should be in sensor
+        #self.gwidth = gwidth # How big steps should be in sensor
         self.nemb = nemb # Dimensions into which to embed the [glimpse, location] info
         self.scaling_factor = scaling_factor
         self.std = std
@@ -255,22 +295,25 @@ class CAT(Model):
         # --- Mappings ---
         self.Controller = Controller(self.nhid, self.std)
         self.BaselineNetwork = BaselineNetwork(self.nhid, 1)
-        self.GlimpseNetwork = GN(self._ninp, self.nemb, self.nsample, self.ngranularity, self.scaling_factor, self.intensity)
+        self.GlimpseNetwork = GN(self._ninp, self.nemb, int(self.nsample*500), self.ngranularity, self.scaling_factor, self.intensity)
         #self.GlimpseNetwork = MVGlimpseNetwork(self._ninp, self.nemb, self.ngranularity, self.nsample, self.gwidth)
         self.RNN = torch.nn.GRU(self.nemb, self.nhid, self.nlayers)
         self.predict = torch.nn.Linear(self.nhid, self._nclasses)
 
-    def denorm(self, T, l_t):
+    def denorm(self, T, l):
         #return ((0.5*(l_t + 1.0))*T)
-        return T*0.5*(1+l_t)
+        #return (T*0.5*(1.0+l_t)).long()
+        return (0.5*((l+1.0)*T)).long()
 
     def forward(self, data, epoch, test):
         # CAT takes in "interpolated"
         data = data[1]
         t = data[0]
+        B, T, V = t.shape
         v = data[1]
         l = data[2]
-        t_max = t[:, -1, :].squeeze()
+        v[torch.isnan(v)] = 0.0
+        #t_max = t[:, -1, :].squeeze()
 
         if self.explore:
             if test:
@@ -288,34 +331,18 @@ class CAT(Model):
         # --- initial glimpse ---
         loc = torch.ones(self._bsz, 1).uniform_(-1, 1)
         loc.requires_grad = False
-        #l_t = torch.mul(t_max, 0.5*(1+l_t.squeeze()))
-        #l_t = self.d(t[:, -1, :].squeeze(), l_t.squeeze()) # Denormalize
-        #print(t_max.dtype)
-        #print(l_t.dtype)
-        #print(type(t_max))
-        #print(t_max*0.5*(1+l_t.squeeze()))
-        #a = t_max*0.5*(1+l_t.squeeze())
-        #print(t_max)
-        #print(torch.ones((self._bsz), dtype=torch.float).uniform_(-1, 1))
-        #print(t_max*0.5*(torch.ones((self._bsz), dtype=torch.float).uniform_(-1, 1)))
-        #loc = t_max*(torch.ones(size=(self._bsz, 1), dtype=torch.float).uniform_(0, 1))
-        #loc = loc.unsqueeze(1)
-        #l_t = a
-        #l_t = t_max*0.5*(orch.ones((self._bsz), dtype=torch.float).uniform_(-1, 1))
-        #print(l_t.shape)
         hidden = self.initHidden(self._bsz)
-        reference_timesteps.append(self.denorm(t_max.squeeze(), loc.squeeze()))
         self.greps = []
         for i in range(self.nhop+1):
+            reference_timesteps.append(self.denorm(T, loc.squeeze())/float(T))
             out, hidden, log_probs, loc, b_t = self.CATCell(data, hidden, loc)
             log_pi.append(log_probs)
             baselines.append(b_t)
-            reference_timesteps.append(self.denorm(t_max.squeeze(), loc.squeeze()))
             #glimpses.append(glimpse)
             
         #self.greps = torch.stack(self.greps).squeeze()
         #self.glimpses = torch.stack(glimpses).squeeze().transpose(0, 1)[:, :-1] # B x R
-        self.reference_timesteps = torch.stack(reference_timesteps).squeeze().transpose(0, 1)[:, :-2] # B x R
+        self.reference_timesteps = torch.stack(reference_timesteps).squeeze().transpose(0, 1)[:, 1:] # B x R
         self.baselines = torch.stack(baselines).squeeze().transpose(0, 1)[:, :-1] # B x R
         self.log_pi = torch.stack(log_pi).squeeze().transpose(0, 1)[:, :-1] # B x R
         logits = self.predict(out.squeeze())
@@ -323,7 +350,6 @@ class CAT(Model):
     
     def CATCell(self, data, h_prev, l):
         grep = self.GlimpseNetwork(data, l)
-        #grep, glimpse = self.GlimpseNetwork(data, l)
         out, hidden = self.RNN(grep.unsqueeze(0), h_prev)
         self.greps.append(out)
         log_probs, l_next = self.Controller(out)
@@ -354,6 +380,54 @@ class CAT(Model):
         # --- putting it all together ---
         loss = self.loss_r + self.loss_c# + self.loss_b
         return loss
+
+class PolicyFreeCAT(Model):
+    def __init__(self, config, data_setting, nhop=3, intensity=True, ngran=2,
+                 nsample=0.2, scaling_factor=5, nemb=50, std=0.15, explore=False):
+        super(PolicyFreeCAT, self).__init__(config, data_setting)
+        self._T = data_setting["num_timesteps"]
+        self.NAME = "PolicyFreeCAT"
+        self.nhop = nhop # Number of steps to take
+        self.ngranularity = ngran # How many levels of granularity
+        self.nsample = nsample # Number of timesteps to collect around l_t
+        #self.gwidth = gwidth # How big steps should be in sensor
+        self.nemb = nemb # Dimensions into which to embed the [glimpse, location] info
+        self.scaling_factor = scaling_factor
+        self.std = std
+        self.explore = explore
+        self.intensity = intensity
+        self.epsilons = exponentialDecay(self._nepoch)
+        self._bsz = config["training"]["batch_size"]
+        
+        # --- Mappings ---
+        self.GlimpseNetwork = GN(self._ninp, self.nemb, int(self.nsample*500), self.ngranularity, self.scaling_factor, self.intensity)
+        self.RNN = torch.nn.GRU(self.nemb, self.nhid, self.nlayers)
+        self.predict = torch.nn.Linear(self.nhid, self._nclasses)
+
+    def forward(self, data, **kwargs):
+        # CAT takes in "interpolated"
+        data = data[1]
+        t = data[0]
+        t_max = t[:, -1, :].squeeze()
+
+        # --- initial glimpse ---
+        loc = torch.ones(self._bsz, 1).uniform_(-1, 1)
+        loc.requires_grad = False
+        hidden = self.initHidden(self._bsz)
+        for i in range(self.nhop+1):
+            out, loc, hidden = self.PolicyFreeCATCell(data, loc, hidden)
+            
+        logits = self.predict(out.squeeze())
+        return logits
+    
+    def PolicyFreeCATCell(self, data, l):
+        grep = self.GlimpseNetwork(data, l)
+        out, hidden = self.RNN(grep.unsqueeze(0), self.hidden)
+        l_next = torch.ones(self._bsz, 1).uniform_(-1, 1)
+        return out, l_next, hidden
+    
+    def computeLoss(self, logits, y):
+        return F.cross_entropy(logits, y)
 
 class PolicyFree(Model):
     def __init__(self, config, data_setting, nref=10, ngran=2, nsample=7,
@@ -457,9 +531,9 @@ class IPN(Model):
     
     def forward(self, data, **kwargs):
         # Interpolator takes raw input
-        t, v = data[2]
+        t, v, lengths = data[2]
         B, T, V = v.shape
-        self.reference_timesteps = torch.linspace(t.min(), t.max(), self.nref).unsqueeze(0).repeat(self._B, 1)
+        self.reference_timesteps = torch.linspace(t.min(), t.max(), self.nref).unsqueeze(0).repeat(B, 1)
         glimpses = []
         self.means = torch.zeros((self._nclasses, self.nref)) # For saving class-wise means
 

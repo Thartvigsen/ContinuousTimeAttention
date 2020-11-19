@@ -25,6 +25,7 @@ class Controller(nn.Module):
         l_t = l_t.detach()
 
         l_t = torch.clamp(l_t, -1, 1)
+        #print(l_t)
         if torch.isnan(l_t).sum() > 0:
             assert 2 == 3
         log_pi = distribution.log_prob(l_t)
@@ -78,6 +79,7 @@ class GaussianAdapter(nn.Module):
         timesteps = timesteps.unsqueeze(1) # Add R dim to real timesteps
         reference_broadcast = reference_broadcast.unsqueeze(3).repeat(1, 1, 1, timesteps.shape[-1])
         dist = self.squaredExponentialKernel(reference_broadcast, timesteps, alpha)
+        dist = dist/dist.shape[1]
         if reduce:
             return dist.sum(2)
         else:
@@ -325,22 +327,22 @@ class Retina(object):
         self.npatches = npatches
         self.sf = scaling_factor
 
-    def denormalize(self, T, l_t):
+    def denormalize(self, l, T):
         #return (l_t*T).long()
-        return (0.5*((l_t+1.0)*T)).long()
+        return (0.5*((l+1.0)*T)).long()
 
     def extractPatch(self, x, l, size):
         B, T, V = x.shape
-        start = self.denormalize(T, l)
+        start = self.denormalize(l, T)
         end = start + size
-        #for b in range(B):
-        #    if start[b] < 0:
-        #        print(l)
-        #        assert 2 == 3
-        x = F.pad(x, (0, 0, size // 2, size // 2))
+        x = F.pad(x, (0, 0, size+1 // 2, size+1 // 2))
         patch = []
         for b in range(B):
-            patch.append(x[b, int(start[b]):int(end[b]), :])
+            x_new = x[b, int(start[b]):int(end[b]), :]
+            #print(x_new.shape, start[b], end[b], int(start[b]), int(end[b]), end[b]-start[b])
+            patch.append(x_new)
+            #print(start[b], end[b], end[b]-start[b])
+        #print()
         return torch.stack(patch)
 
     def foveate(self, x, l):
@@ -376,7 +378,6 @@ class GN(nn.Module):
             self.fc1 = nn.Linear(npatches*size*ninp, nhid)
             self.fc2 = nn.Linear(1, nhid)
             self.fc4 = nn.Linear(nhid*2, nhid)
-
 
     def forward(self, x, l_t):
         v = x[1] # Just grab values
