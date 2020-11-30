@@ -63,7 +63,10 @@ class MainWriter(object):
             #"""SeqLengthUniform(T=450, N=5000, nref=100)""",
             #"""SeqLengthUniform(T=500, N=5000, nref=100)""",
 
-            """MTable(T=500, N=5000, nref=500)""",
+            """ExtraSensory(label_name='label:BICYCLING', threshold=0.001, nref=200)""",
+            #"""UWave2(nref=200)""",
+
+            #"""MTable(T=500, N=5000, nref=500)""",
             #"""SyntheticValObs(T=500, N=5000, nref=500)""",
 
             #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=500)""",
@@ -103,8 +106,8 @@ class MainWriter(object):
             #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.95)""",
         ]
 
-        self.metrics = """[Accuracy()]"""
-        #self.metrics = """[Accuracy(), AUC_macro()]"""
+        #self.metrics = """[Accuracy()]"""
+        self.metrics = """[Accuracy(), AUC_micro()]"""
 
         self.models = [
             #"""Interpolator(config, d.data_setting, adapter="linear", nref=10)""",
@@ -118,8 +121,9 @@ class MainWriter(object):
             """RNNSimple(config, d.data_setting)""",
             """RNN(config, d.data_setting)""",
             """RNNDelta(config, d.data_setting)""",
-            """GRU_D(config, d.data_setting)""",
-            """IPN(config, d.data_setting, nref=500)""",
+            """RNNDecay(config, d.data_setting)""",
+            #"""GRU_D(config, d.data_setting)""",
+            """IPN(config, d.data_setting, nref=200)""",
             #"""CAT(config, d.data_setting, nhop=3, nsample=0.1, scaling_factor=10, explore=False, intensity=False)""",
             """CAT(config, d.data_setting, nhop=3, nsample=0.05, scaling_factor=20, explore=False, intensity=False)""",
             """PolicyFreeCAT(config, d.data_setting, nhop=3, nsample=0.05, scaling_factor=20, explore=False, intensity=False)""",

@@ -52,10 +52,6 @@ class RNN(Model):
     def forward(self, data, **kwargs):
         # RNN takes in "imputed"
         x, m, d = data[0]
-
-        print(x[0, :, ].squeeze())
-        assert 2 == 3
-
         B, T, V = x.shape # Assume timesteps x batch x variables input
         #k = x.shape[1] // self.nref
         #x = F.avg_pool1d(x.transpose(1, 2), k).transpose(1, 2)
@@ -191,7 +187,7 @@ class RNNInterp(Model):
         return logits
 
 class FilterLinear(nn.Module):
-    def __init__(self, in_features, out_features, filter_square_matrix, bias=True):
+    def __init__(self, in_features, out_features):
         """Multiply an input matrix with a diagonally-weighted
         parameter matrix.
         """
@@ -208,8 +204,8 @@ class FilterLinear(nn.Module):
         self.linear_filter.weight.data.uniform_(-stdv, stdv)
         self.linear_filter.bias.data.uniform_(-stdv, stdv)
 
-    def forward(self, matrix):
-        return self.linear_filter(matrix)
+    def forward(self, x):
+        return self.linear_filter(x)
 
 class GRU_D(Model):
     def __init__(self, config, data_setting):
@@ -217,7 +213,6 @@ class GRU_D(Model):
         self.NAME = "GRU_D"
         super(GRU_D, self).__init__(config, data_setting)
         combined_dim = self.nhid + 2*self._ninp # Input and missingness vector
-        self._identity = torch.eye(self._ninp)
         self._zeros_x = torch.zeros(self._ninp)
         self._zeros_h = torch.zeros(self.nhid)
         self._h_grads = []
@@ -227,9 +222,7 @@ class GRU_D(Model):
         self.r = nn.Linear(combined_dim, self.nhid) # Reset gate
         self.h = nn.Linear(combined_dim, self.nhid)
         self.out = nn.Linear(self.nhid, self._nclasses)
-        self.gamma_x = FilterLinear(self._ninp,
-                                    self._ninp,
-                                    self._identity)
+        self.gamma_x = FilterLinear(self._ninp, self._ninp)
         self.gamma_h = nn.Linear(self._ninp, self.nhid)
 
     def gru_d_cell(self, x, h, m, dt, x_prime):
@@ -247,10 +240,10 @@ class GRU_D(Model):
         x = m*x + (1-m)*(delta_x*x_prime + (1-delta_x)*self._x_mean)
 
         # --- gating functions ---
-        combined = torch.cat((x, h, m), dim=2)
+        combined = torch.cat((x, h, m), dim=1)
         r = torch.sigmoid(self.r(combined))
         z = torch.sigmoid(self.z(combined))
-        new_combined = torch.cat((x, torch.mul(r, h), m), dim=2)
+        new_combined = torch.cat((x, torch.mul(r, h), m), dim=1)
         h_tilde = torch.tanh(self.h(new_combined))
         h = (1 - z)*h + z*h_tilde
         return h, x_prime
@@ -263,22 +256,67 @@ class GRU_D(Model):
         diffs = diffs.transpose(0, 1)
         T, B, V = vals.shape
         self._x_mean = vals.mean(0) # Mean over timesteps (B x V)
-        h = torch.zeros(self.nlayers, B, self.nhid)
+        h = torch.zeros(B, self.nhid)
         x_prime = torch.zeros(self._ninp)
         for t in range(T):
-            x = vals[t].unsqueeze(0)
-            m = masks[t].unsqueeze(0)
-            diff = diffs[t].unsqueeze(0)
+            x = vals[t]
+            m = masks[t]
+            diff = diffs[t]
             h, x_prime = self.gru_d_cell(x, h, m, diff, x_prime)
 
         logits = self.out(h.squeeze(0)) # Remove time dimension
+        return logits
+
+class RNNDecay(Model):
+    def __init__(self, config, data_setting):
+        # --- hyperparameters ---
+        self.NAME = "RNNDecay"
+        super(RNNDecay, self).__init__(config, data_setting)
+        combined_dim = self.nhid + 2*self._ninp # Input and missingness vector/diff
+        self._zeros_h = torch.zeros(self.nhid)
+
+        # --- mappings ---
+        self.z = nn.Linear(combined_dim, self.nhid) # Update gate
+        self.r = nn.Linear(combined_dim, self.nhid) # Reset gate
+        self.h = nn.Linear(combined_dim, self.nhid)
+        self.out = nn.Linear(self.nhid, self._nclasses)
+        self.gamma_h = nn.Linear(self._ninp, self.nhid)
+
+    def decayCell(self, x, h, m, dt):
+        # --- apply state-decay ---
+        delta_h = torch.exp(-torch.max(self._zeros_h, self.gamma_h(dt)))
+        h = delta_h * h
+
+        # --- gating functions ---
+        combined = torch.cat((x, h, m), dim=1)
+        r = torch.sigmoid(self.r(combined))
+        z = torch.sigmoid(self.z(combined))
+        new_combined = torch.cat((x, torch.mul(r, h), m), dim=1)
+        h_tilde = torch.tanh(self.h(new_combined))
+        h = (1 - z)*h + z*h_tilde
+        return h
+    
+    def forward(self, data, **kwargs):
+        vals, masks, diffs = data[0]
+        vals = vals.transpose(0, 1)
+        masks = masks.transpose(0, 1)
+        diffs = diffs.transpose(0, 1)
+        T, B, V = vals.shape
+        h = torch.zeros(B, self.nhid)
+        for t in range(T):
+            x = vals[t]#.unsqueeze(0)
+            m = masks[t]#.unsqueeze(0)
+            diff = diffs[t]#.unsqueeze(0)
+            h = self.decayCell(x, h, m, diff)
+
+        logits = self.out(h.squeeze(0))
         return logits
 
 class CAT(Model):
     def __init__(self, config, data_setting, nhop=3, intensity=True, ngran=2,
                  nsample=0.2, scaling_factor=5, nemb=50, std=0.15, explore=False):
         super(CAT, self).__init__(config, data_setting)
-        self._T = data_setting["num_timesteps"]
+        #self._T = data_setting["num_timesteps"]
         self.NAME = "CAT"
         self.nhop = nhop # Number of steps to take
         self.ngranularity = ngran # How many levels of granularity
@@ -385,7 +423,7 @@ class PolicyFreeCAT(Model):
     def __init__(self, config, data_setting, nhop=3, intensity=True, ngran=2,
                  nsample=0.2, scaling_factor=5, nemb=50, std=0.15, explore=False):
         super(PolicyFreeCAT, self).__init__(config, data_setting)
-        self._T = data_setting["num_timesteps"]
+        #self._T = data_setting["num_timesteps"]
         self.NAME = "PolicyFreeCAT"
         self.nhop = nhop # Number of steps to take
         self.ngranularity = ngran # How many levels of granularity
@@ -413,9 +451,9 @@ class PolicyFreeCAT(Model):
         # --- initial glimpse ---
         loc = torch.ones(self._bsz, 1).uniform_(-1, 1)
         loc.requires_grad = False
-        hidden = self.initHidden(self._bsz)
+        self.hidden = self.initHidden(self._bsz)
         for i in range(self.nhop+1):
-            out, loc, hidden = self.PolicyFreeCATCell(data, loc, hidden)
+            out, loc = self.PolicyFreeCATCell(data, loc)
             
         logits = self.predict(out.squeeze())
         return logits
@@ -424,7 +462,7 @@ class PolicyFreeCAT(Model):
         grep = self.GlimpseNetwork(data, l)
         out, hidden = self.RNN(grep.unsqueeze(0), self.hidden)
         l_next = torch.ones(self._bsz, 1).uniform_(-1, 1)
-        return out, l_next, hidden
+        return out, l_next
     
     def computeLoss(self, logits, y):
         return F.cross_entropy(logits, y)

@@ -270,8 +270,8 @@ class ExpConfig():
 
     def writeFileHeaders(self):
         if not os.path.exists(self.LOG_PATH+"train_results_{}.csv".format(self.iter)):
-            #row = ["Loss"]
-            row = ["Loss", "C Loss", "R Loss"]
+            row = ["Loss"]
+            #row = ["Loss", "C Loss", "R Loss"]
             for metric in self.metrics: # Add metric names to csv headers
                 row.append(metric.name)
 
@@ -323,8 +323,8 @@ class ExpConfig():
             logits = model(X, epoch=epoch, test=test)
             loss = model.computeLoss(logits, y)
             total_loss += loss.item()
-            total_loss_c += model.loss_c.item()
-            total_loss_r += model.loss_r.item()
+            #total_loss_c += model.loss_c.item()
+            #total_loss_r += model.loss_r.item()
             try:
                 reference_timesteps.append(model.reference_timesteps)
             except:
@@ -353,8 +353,8 @@ class ExpConfig():
             pass
             #class_means = torch.stack(class_means).mean(0).detach().numpy()
         total_loss = total_loss/len(loader)
-        total_loss_c = total_loss_c/len(loader)
-        total_loss_r = total_loss_r/len(loader)
+        #total_loss_c = total_loss_c/len(loader)
+        #total_loss_r = total_loss_r/len(loader)
         predictions = torch.stack(predictions).squeeze().detach().numpy()#.astype(np.int32)#.transpose(0, 1)
         #predictions = predictions.reshape(-1, 1).astype(np.int32)
         #predictions = predictions.reshape(-1, predictions.shape[-1])
@@ -375,8 +375,8 @@ class ExpConfig():
         #assert 2 == 3
 
         # ---log results ---
-        #row = [total_loss]
-        row = [total_loss, total_loss_c, total_loss_r]
+        row = [total_loss]
+        #row = [total_loss, total_loss_c, total_loss_r]
         metrics = self.computeMetrics(predictions, labels)
         [row.append(metric) for metric in metrics]
         #print("Count Accuracy: {}".format(np.round(100.*correct/count, 3)))

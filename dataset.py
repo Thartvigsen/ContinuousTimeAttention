@@ -1056,104 +1056,302 @@ class Computers(IrregularTimeSeries):
         self.test_ix = all_ix[int(len(values)*0.8):]
         return values.float(), labels.long(), intensities.float()
 
+#class ISTS(Dataset):
+#    def __init__(self, nref):
+#        super(ISTS, self).__init__()
+#        self.nref = nref
+#        #self.nsteps_interp = ninterp
+#        #self.nsteps_impute = nimpute
+#
+#    def __getitem__(self, ix):
+#        return (self._imputed[ix], self._interpolated[ix], self._raw[ix]), self.labels[ix]
+#
+#    def getIntensity(self, t, r, alpha=0.01):
+#        r = r.unsqueeze(1).repeat(1, t.shape[0]) # Add a column of all r values for each of t timesteps
+#        dist = torch.exp(torch.mul(-alpha, 1*torch.sub(r, t).pow(2)))    
+#        return dist.sum(1)/len(dist)
+#
+#    def resample(self, t, v, R):
+#        new_r = torch.linspace(t.min(), t.max(), R)
+#        new_v = []
+#        lam = []
+#        f = interpolate.interp1d(t, v, fill_value=(v[0], v[-1]), bounds_error=False)
+#        new_v = f(new_r)
+#        lam = self.getIntensity(t, new_r)
+#        return new_r, torch.tensor(new_v), lam
+#
+#    def irregularize(self, timesteps, values, nref):
+#        interpolated = []
+#        for i in range(len(timesteps)):
+#            t = timesteps[i]
+#            v = values[i]
+#            t, v, lam = self.resample(torch.tensor(t, dtype=torch.float),
+#                                      torch.tensor(v, dtype=torch.float),
+#                                      nref)
+#            v = v.reshape(-1, 1)
+#            lam = lam.reshape(-1, 1)
+#            interpolated.append((t.reshape(-1, 1), v, lam))
+#        return interpolated
+#
+#    def valMaskPad(self, timesteps, values, nsteps):
+#        # Goal: Bin into nsteps evenly-spaced bins and then collect masks/delta
+#        imputed = []
+#        for i in range(len(timesteps)):
+#            t = timesteps[i]
+#            v = values[i]
+#            bins = np.round(np.linspace(np.min(timesteps[i]), np.max(timesteps[i]), nsteps)[:, None], 3)
+#            t = np.array(t)[None, :]
+#            v = np.array(v)[None, :]
+#            buckets = np.abs((t-bins)).argmin(0)
+#            val_means = []
+#            timestep_means = []
+#            for n in range(nsteps):
+#                ix = np.where(buckets==n)
+#                val_means.append(np.nanmean(np.take(v, ix)))
+#                timestep_means.append(np.nanmean(np.take(t, ix)))
+#            val_means = np.array(val_means)
+#            timestep_means = np.array(timestep_means)
+#            masks = np.zeros_like(val_means)
+#            masks[np.isnan(val_means)] = 1
+#            deltas = []
+#            curr_val = 0
+#            for t in range(len(timestep_means)):
+#                if np.isnan(timestep_means[t]): # increase counter by the amount of time that has passed
+#                    curr_val += np.abs(np.float(bins[t]))
+#                else:
+#                    curr_val = 0
+#                deltas.append(curr_val)
+#            deltas = np.round(np.array(deltas), 3)
+#            val_means[np.isnan(val_means)] = np.nanmean(val_means)
+#            val_means = torch.tensor(val_means, dtype=torch.float)
+#            masks = torch.tensor(masks, dtype=torch.float)
+#            deltas = torch.tensor(deltas, dtype=torch.float)
+#            imputed.append((val_means.unsqueeze(1), masks.unsqueeze(1), deltas.unsqueeze(1)))
+#        return imputed
+#
+#    def prepISTS(self, timesteps, values, nref):
+#        # Assume timesteps/values are numpy arrays (same # steps per series)
+#
+#        # Masked
+#        imputed = self.valMaskPad(timesteps, values, nref)
+#
+#        # Interpolated
+#        interpolated = self.irregularize(timesteps, values, nref=500) # For CAT
+#        #interpolated = (V, L)
+#        #interpolated = tuple([torch.tensor(i, dtype=torch.float) for i in interpolated])
+#
+#        timesteps = [torch.tensor(i, dtype=torch.float) for i in timesteps]
+#        lengths = []
+#        for item in timesteps:
+#            lengths.append(len(item))
+#        lengths = torch.tensor(np.array(lengths))
+#        timesteps = pad_sequence(timesteps).T.unsqueeze(2)
+#        values = [torch.tensor(i, dtype=torch.float) for i in values]
+#        values = pad_sequence(values).T.unsqueeze(2)
+#        raw = []
+#        for i in range(len(timesteps)):
+#            raw.append((timesteps[i], values[i], lengths[i]))
+#
+#        return imputed, interpolated, raw
+
 class ISTS(Dataset):
     def __init__(self, nref):
         super(ISTS, self).__init__()
-        self.data_setting["num_timesteps"] = self.T # Write over this in new dataset
-        self.nref = nref
-        #self.nsteps_interp = ninterp
-        #self.nsteps_impute = nimpute
+        self.nref = nref 
 
-    def __getitem__(self, ix):
+    def __getitem__(self, ix): 
         return (self._imputed[ix], self._interpolated[ix], self._raw[ix]), self.labels[ix]
-
-    def getIntensity(self, t, r, alpha=0.01):
+    
+    def __len__(self):
+        return len(self.labels)
+    
+    def getIntensity(self, t, r, alpha=0.001):
         r = r.unsqueeze(1).repeat(1, t.shape[0]) # Add a column of all r values for each of t timesteps
         dist = torch.exp(torch.mul(-alpha, 1*torch.sub(r, t).pow(2)))    
         return dist.sum(1)/len(dist)
 
     def resample(self, t, v, R):
         new_r = torch.linspace(t.min(), t.max(), R)
-        new_v = []
-        lam = []
-        f = interpolate.interp1d(t, v, fill_value=(v[0], v[-1]), bounds_error=False)
-        new_v = f(new_r)
-        lam = self.getIntensity(t, new_r)
+        new_v = [] 
+        lam = [] 
+        for i in range(self._N_FEATURES):
+            f = interpolate.interp1d(t[:, i], v[:, i], fill_value=(v[:, i][0], v[:, i][-1]), bounds_error=False)
+            new_v.append(f(new_r))
+            lam.append(self.getIntensity(t[:, i], new_r))
+        new_v = np.transpose(np.stack(new_v), (1, 0))
+        lam = np.transpose(np.stack(lam), (1, 0))
         return new_r, torch.tensor(new_v), lam
 
     def irregularize(self, timesteps, values, nref):
-        interpolated = []
+        interpolated = [] 
         for i in range(len(timesteps)):
             t = timesteps[i]
             v = values[i]
             t, v, lam = self.resample(torch.tensor(t, dtype=torch.float),
                                       torch.tensor(v, dtype=torch.float),
                                       nref)
-            v = v.reshape(-1, 1)
-            lam = lam.reshape(-1, 1)
-            interpolated.append((t.reshape(-1, 1), v, lam))
+            interpolated.append((t, v, lam))
         return interpolated
 
     def valMaskPad(self, timesteps, values, nsteps):
         # Goal: Bin into nsteps evenly-spaced bins and then collect masks/delta
         imputed = []
-        for i in range(len(timesteps)):
-            t = timesteps[i]
-            v = values[i]
-            bins = np.round(np.linspace(np.min(timesteps[i]), np.max(timesteps[i]), nsteps)[:, None], 3)
-            t = np.array(t)[None, :]
-            v = np.array(v)[None, :]
-            buckets = np.abs((t-bins)).argmin(0)
-            val_means = []
-            timestep_means = []
-            for n in range(nsteps):
-                ix = np.where(buckets==n)
-                val_means.append(np.nanmean(np.take(v, ix)))
-                timestep_means.append(np.nanmean(np.take(t, ix)))
-            val_means = np.array(val_means)
-            timestep_means = np.array(timestep_means)
+        for ix in range(len(timesteps)):
+            t = timesteps[ix]
+            v = values[ix]
+            bins = np.round(np.linspace(np.min(timesteps[ix]), np.max(timesteps[ix]), nsteps), 3)
+            buckets = (np.abs(t - bins[:, None, None].repeat(self._N_FEATURES, 2))).argmin(0)
+            val_means, timestep_means, deltas = [], [], []
+            for i in range(self._N_FEATURES):
+                inner_val_means, inner_timestep_means, inner_deltas = [], [], []
+                curr_val = 0
+                for n in range(nsteps):
+                    ix = (buckets[:, i] == n).astype(np.int32)
+                    inner_val_means.append((v[:, i]*ix).sum()/ix.sum())
+                    inner_timestep_means.append((t[:, i]*ix).sum()/ix.sum())
+                    if np.isnan(inner_timestep_means[n]):
+                        curr_val += np.abs(np.float(bins[n]))
+                    else:
+                        curr_val = 0
+                    inner_deltas.append(curr_val)
+                val_means.append(np.stack(inner_val_means))
+                timestep_means.append(np.stack(inner_timestep_means))
+                deltas.append(np.stack(inner_deltas))
+                
+            val_means = np.stack(val_means).transpose(1, 0)
+            timestep_means = np.stack(timestep_means).transpose(1, 0)
+            deltas = np.round(np.stack(deltas).transpose(1, 0), 3)
             masks = np.zeros_like(val_means)
             masks[np.isnan(val_means)] = 1
-            deltas = []
-            curr_val = 0
-            for t in range(len(timestep_means)):
-                if np.isnan(timestep_means[t]): # increase counter by the amount of time that has passed
-                    curr_val += np.abs(np.float(bins[t]))
-                else:
-                    curr_val = 0
-                deltas.append(curr_val)
-            deltas = np.round(np.array(deltas), 3)
             val_means[np.isnan(val_means)] = np.nanmean(val_means)
             val_means = torch.tensor(val_means, dtype=torch.float)
             masks = torch.tensor(masks, dtype=torch.float)
-            deltas = torch.tensor(deltas, dtype=torch.float)
-            imputed.append((val_means.unsqueeze(1), masks.unsqueeze(1), deltas.unsqueeze(1)))
+            deltas = torch.tensor(deltas, dtype=torch.float)/deltas.max()
+            imputed.append((val_means, masks, deltas))
         return imputed
 
     def prepISTS(self, timesteps, values, nref):
         # Assume timesteps/values are numpy arrays (same # steps per series)
-
-        # Masked
         imputed = self.valMaskPad(timesteps, values, nref)
 
         # Interpolated
         interpolated = self.irregularize(timesteps, values, nref=500) # For CAT
-        #interpolated = (V, L)
-        #interpolated = tuple([torch.tensor(i, dtype=torch.float) for i in interpolated])
 
-        timesteps = [torch.tensor(i, dtype=torch.float) for i in timesteps]
-        lengths = []
-        for item in timesteps:
-            lengths.append(len(item))
-        lengths = torch.tensor(np.array(lengths))
-        timesteps = pad_sequence(timesteps).T.unsqueeze(2)
-        values = [torch.tensor(i, dtype=torch.float) for i in values]
-        values = pad_sequence(values).T.unsqueeze(2)
         raw = []
         for i in range(len(timesteps)):
-            raw.append((timesteps[i], values[i], lengths[i]))
-
+            t = torch.tensor(timesteps[i]).float()
+            v = torch.tensor(values[i]).float()
+            raw.append((t, v, torch.tensor(len(t))))
         return imputed, interpolated, raw
+
+class ExtraSensory(ISTS):
+    def __init__(self, label_name, threshold, nsegments=20, nref=100):
+        self.NAME = "ExtraSensory_{}".format(label_name)
+        super(ExtraSensory, self).__init__(nref)
+        self._load_path = "/home/twhartvigsen/data/ES/raw/"
+        #self._load_path = "/home/tom/Documents/data/ES/raw/"
+        self._fnames = os.listdir(self._load_path)
+        self.threshold = threshold
+        self.nsegments = nsegments
+        self._label_name = label_name[6:]
+        columns = pd.read_csv(os.path.join(self._load_path, self._fnames[0]), header=0).columns
+        self._label_indices = np.array(["label" in i for i in columns])#.astype(np.int32)
+        self._label_names = columns[self._label_indices]
+        self._acc_columns = ["raw_acc:3d:mean_x", "raw_acc:3d:mean_y", "raw_acc:3d:mean_z"]
+        self._gyro_columns = ["proc_gyro:3d:mean_x", "proc_gyro:3d:mean_y", "proc_gyro:3d:mean_z"]
+        self._N_FEATURES = 40
+        self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+        self.data_setting["N_FEATURES"] = self._N_FEATURES
+        self.data_setting["N_CLASSES"] = len(torch.unique(self.labels))
+    
+    def readData(self):
+        X = []
+        Y = []
+        accs = []
+        gyros = []
+        for f in self._fnames:
+            x = pd.read_csv(os.path.join(self._load_path, f), header=0)
+            acc_norm = np.linalg.norm(np.array(x[self._acc_columns]), ord=2, axis=1)
+            acc_diff = np.concatenate(([0], acc_norm[1:] - acc_norm[:-1]))
+            accs.append(acc_diff)
+            gyro_norm = np.linalg.norm(np.array(x[self._gyro_columns]), ord=2, axis=1)
+            gyro_diff = np.concatenate(([0], gyro_norm[1:] - gyro_norm[:-1]))
+            gyros.append(gyro_diff)
+            labels = np.array(x)[:, self._label_indices]
+            labels[np.isnan(labels)] = 0.0
+            Y.append(labels)
+            x_tmp = np.array(x)[:, ~self._label_indices]
+            x_tmp = x_tmp[:, :self._N_FEATURES+1]
+            # Normalize timesteps
+            x_tmp[:, 0] = (x_tmp[:, 0] - x_tmp[:, 0].min())/(x_tmp[:, 0].max()-x_tmp[:, 0].min())
+            X.append(x_tmp)
+        return X, Y, accs, gyros
+
+    def getLabelIndex(self, arr, name, label_names):
+        col_ix = label_names == name
+        return arr[:, col_ix] == 1
+
+    def getTimestepsValuesLabels(self, X, Y, label_name, label_names, accs, threshold):
+        label_ix = self.getLabelIndex(Y, label_name, label_names)
+        ix = np.abs(accs) > threshold
+        labels = label_ix[ix]
+        values = X[ix, 1:]
+        timesteps = X[ix, 0]
+        return timesteps, values, labels
+
+    def preprocess(self, timesteps, values, labels, nsegments):
+        bins = np.linspace(0, 1, nsegments+1)
+        new_t = []
+        new_v = []
+        new_y = []
+        for b in range(nsegments):
+            try:
+                lt_max = timesteps < bins[b+1]
+                gt_min = timesteps >= bins[b]
+                in_bin = gt_min & lt_max
+                new_t.append((timesteps[in_bin] - timesteps[in_bin].min())/(timesteps[in_bin].max()-timesteps[in_bin].min()))
+                new_v.append(values[in_bin])
+                new_y.append((labels[in_bin].sum() > 0).astype(np.int32))
+            except:
+                pass
+        return new_t, new_v, new_y
+
+    def createDataset(self, X, Y, label_name, label_names, accs, threshold, nsegments):
+        all_timesteps = []
+        all_values = []
+        all_labels = []
+        lengths = []
+        for i in range(len(X)):
+        #for i in range(2):
+            timesteps, values, labels = self.getTimestepsValuesLabels(X[i], Y[i], label_name, label_names, accs[i], threshold)
+            timesteps, values, labels = self.preprocess(timesteps, values, labels, nsegments)
+            [lengths.append(len(j)) for j in timesteps]
+            [all_timesteps.append(torch.tensor(j)) for j in timesteps]
+            [all_values.append(torch.tensor(j)) for j in values]
+            [all_labels.append(torch.tensor(j)) for j in labels]
+        all_timesteps = pad_sequence(all_timesteps, batch_first=True)[:, :500].unsqueeze(2)
+        all_values = pad_sequence(all_values, batch_first=True)[:, :500, :]
+        all_labels = torch.stack(all_labels)
+        lengths = np.array(lengths).clip(0, 500)
+        return all_timesteps, all_values, all_labels, lengths
+
+    def loadData(self):
+        X, Y, accs, gyros = self.readData()
+        timesteps, values, labels, lengths = self.createDataset(X, Y, self._label_name,
+                                                                self._label_names, accs,
+                                                                self.threshold, self.nsegments)
+        timesteps[torch.isnan(timesteps)] = 0.0
+        values[torch.isnan(values)] = 0.0
+        timesteps = timesteps.repeat(1, 1, self._N_FEATURES)
+
+        ix = np.random.choice(len(timesteps), len(timesteps), replace=False)
+        timesteps = timesteps[ix].numpy()
+        values = values[ix].numpy()
+        y = labels[ix]
+            
+        imputed, interpolated, raw = self.prepISTS(timesteps, values, self.nref)
+        y = y.long()
+        return imputed, interpolated, raw, y
 
 class SeqLength(ISTS):
     def __init__(self, T, N, nref):
@@ -1450,6 +1648,125 @@ class MTableUniform(MTable):
         timesteps = np.sort(timesteps)    
         return timesteps
 
+class UWave2(ISTS):
+    def __init__(self, nref=500):
+        #self.nref = 500
+        self.NAME = "UWave3"
+        super(UWave2, self).__init__(nref=nref)
+        self._load_path = self._data_path + "UWave/"
+        self.data_setting["N_FEATURES"] = 1
+        self.data_setting["N_CLASSES"] = 8
+        self.data_setting["num_timesteps"] = 94
+        self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+    
+    def loadData(self):
+        x_train = np.load(self._load_path + "x_train.npy")
+        y_train = np.load(self._load_path + "y_train.npy")
+        x_test = np.load(self._load_path + "x_test.npy")
+        y_test = np.load(self._load_path + "y_test.npy")
+        l_train = np.load(self._load_path + "l_train.npy")
+        l_test = np.load(self._load_path + "l_test.npy")
+        all_ix = np.arange(len(x_train) + len(x_test))
+        self.N = len(all_ix)
+        self.T = x_train.shape[1]
+        np.random.shuffle(all_ix)
+        self.train_ix = all_ix[:len(x_train)]
+        self.test_ix = all_ix[len(x_train):]
+        self.val_ix = all_ix[len(x_train):]
+        timesteps = np.concatenate((x_train, x_test), 0)#.unsqueeze(2)
+        values = np.concatenate((y_train, y_test), 0)#.unsqueeze(2)
+        labels = np.concatenate((l_train, l_test), 0)
+
+        imputed, interpolated, raw = self.prepISTS(timesteps, values, self.nref)
+        y = torch.tensor(labels, dtype=torch.long)
+        return imputed, interpolated, raw, y
+
+class PersonActivity2(ISTS):
+    def __init__(self):
+        self.NAME = "PersonActivity2"
+        super(PersonActivity2, self).__init__()
+        self._load_path = self._data_path + "person_activity/"
+        #self.timesteps, self.values, self.intensities, self.labels = self.loadData()
+        self.data_setting["N_FEATURES"] = 12
+        self.data_setting["N_CLASSES"] = 7
+        #self.data_setting["num_timesteps"] = 94
+        self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+    
+    def loadData(self):
+        values = torch.load(self._load_path+"values.pt").numpy()
+        timesteps = torch.load(self._load_path+"timesteps.pt").numpy()
+        labels = torch.load(self._load_path+"labels.pt").numpy()
+        #intensities = torch.load(self._load_path+"intensities.pt")
+        all_ix = np.arange(len(values))
+        np.random.shuffle(all_ix)
+        values = values[all_ix]
+        timesteps = timesteps[all_ix]
+        labels = labels[all_ix]
+
+        imputed, interpolated, raw = self.prepISTS(timesteps, values, self.nref)
+        y = torch.tensor(labels, dtype=torch.long)
+        return imputed, interpolated, raw, y
+
+class PhysioNet2(ISTS):
+    def __init__(self):
+        self.NAME = "PhysioNet2"
+        super(PhysioNet2, self).__init__()
+        self._load_path = "/home/twhartvigsen/data/PhysioNet/processed/"
+        makedir(self._load_path)
+        self._good_vars = [3, 4, 5, 9, 14, 17, 22, 24, 28, 29, 30, 31]
+        self._N_FEATURES = len(self._good_vars)
+        #self.ids, self.timesteps, self.values, self.masks, self.labels, self.lengths = self.loadData()
+        self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+        self.timesteps = self.timesteps.unsqueeze(2).repeat(1, 1, self._N_FEATURES)
+        self.data = torch.stack([self.timesteps, self.values])
+        #torch.save(self.timesteps, "./data/PhysioNet/physionet_timesteps.pt")
+        #torch.save(self.values, "./data/PhysioNet/physionet_values.pt")
+        #torch.save(self.labels, "./data/PhysioNet/physionet_labels.pt")
+        #torch.save(self.masks, "./data/PhysioNet/physionet_masks.pt")
+        #torch.save(self.diffs, "./data/PhysioNet/physionet_diffs.pt")
+        self.data_setting["N_FEATURES"] = self._N_FEATURES
+        self.data_setting["N_CLASSES"] = len(torch.unique(self.labels))
+    
+    def loadData(self):
+        set_a = torch.load(self._load_path + "set-a_0.016.pt")
+        max_a = self.getMaxLength(set_a)
+        max_length = max(max_a, max_b)
+        ids, timestamps, values, masks, labels, lengths = self.gatherData(set, max_length)
+        ix = np.random.choice(len(ids), len(ids), replace=False)
+        values = values[all_ix]
+        timesteps = timesteps[all_ix]
+        labels = labels[all_ix]
+
+        imputed, interpolated, raw = self.prepISTS(timesteps, values, self.nref)
+        y = torch.tensor(labels, dtype=torch.long)
+        return imputed, interpolated, raw, y
+        #return ids, timestamps, values, masks, labels, lengths
+
+    def getMaxLength(self, data):
+        max_length = 0 
+        for i, item in enumerate(data):
+            if len(item[1]) > max_length:
+                max_length = len(item[1])
+        return max_length
+
+    def gatherData(self, data, MAX_LENGTH):
+        ids = torch.zeros(len(data))
+        timestamps = torch.zeros((len(data), MAX_LENGTH))
+        values = torch.zeros((len(data), MAX_LENGTH, self._N_FEATURES))
+        masks = torch.zeros((len(data), MAX_LENGTH, self._N_FEATURES))
+        diffs = torch.zeros((len(data), MAX_LENGTH, self._N_FEATURES))
+        labels = torch.zeros(len(data))
+        lengths = torch.zeros(len(data))
+        for i, item in enumerate(data):
+            if item[4] is not None:
+                ids[i] = torch.tensor(int(item[0]), dtype=torch.long)
+                timestamps[i, :len(item[1])] = item[1]
+                values[i, :len(item[2])] = item[2][:, self._good_vars]
+                masks[i, :len(item[3])] = item[3][:, self._good_vars]
+                #diffs[i, :len(item[3])] = item[3]
+                labels[i] = item[4]
+                lengths[i] = len(item[1])
+        return ids, timestamps, values, masks, labels.long(), lengths
 
 #class MTable(ISTS):
 #    def __init__(self, T, N, nref):
