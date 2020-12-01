@@ -364,15 +364,6 @@ class ExpConfig():
         except:
             pass
         labels = torch.stack(labels).squeeze().detach().numpy()
-        #labels = labels.reshape(-1, 1)
-        #if len(labels.shape) > 2:
-        #    labels = labels.reshape(-1, labels.shape[-1])
-        #else:
-        #    labels = labels.reshape(-1, 1)
-
-        #for x, y in zip(labels, l):
-        #    print(x, y)
-        #assert 2 == 3
 
         # ---log results ---
         row = [total_loss]

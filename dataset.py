@@ -1180,6 +1180,7 @@ class ISTS(Dataset):
             lam.append(self.getIntensity(t[:, i], new_r))
         new_v = np.transpose(np.stack(new_v), (1, 0))
         lam = np.transpose(np.stack(lam), (1, 0))
+        new_r = new_r.unsqueeze(1).repeat(1, self._N_FEATURES)
         return new_r, torch.tensor(new_v), lam
 
     def irregularize(self, timesteps, values, nref):
@@ -1245,25 +1246,40 @@ class ISTS(Dataset):
         return imputed, interpolated, raw
 
 class ExtraSensory(ISTS):
-    def __init__(self, label_name, threshold, nsegments=20, nref=100):
-        self.NAME = "ExtraSensory_{}".format(label_name)
+    def __init__(self, label_name, threshold, nsegments=20, nref=100, regen=False):
+        self.NAME = "ExtraSensory_{}".format(label_name[6:])
         super(ExtraSensory, self).__init__(nref)
-        self._load_path = "/home/twhartvigsen/data/ES/raw/"
+        self._load_path = "../data/ES/raw/"
+        self._save_path = "../data/ES/processed/"
         #self._load_path = "/home/tom/Documents/data/ES/raw/"
         self._fnames = os.listdir(self._load_path)
         self.threshold = threshold
         self.nsegments = nsegments
-        self._label_name = label_name[6:]
+        self._label_name = label_name#[6:]
         columns = pd.read_csv(os.path.join(self._load_path, self._fnames[0]), header=0).columns
         self._label_indices = np.array(["label" in i for i in columns])#.astype(np.int32)
         self._label_names = columns[self._label_indices]
         self._acc_columns = ["raw_acc:3d:mean_x", "raw_acc:3d:mean_y", "raw_acc:3d:mean_z"]
         self._gyro_columns = ["proc_gyro:3d:mean_x", "proc_gyro:3d:mean_y", "proc_gyro:3d:mean_z"]
         self._N_FEATURES = 40
-        self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
         self.data_setting["N_FEATURES"] = self._N_FEATURES
+        if regen:
+        #if regen or not os.path.exists(self._load_path+"imputed.pt"):
+            self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+        else:
+            try: # try to load data
+                self._imputed, self._interpolated, self._raw, self.labels = self.loadSavedData()
+            except: # If that fails, still recreate the dataset
+                self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
         self.data_setting["N_CLASSES"] = len(torch.unique(self.labels))
     
+    def loadSavedData(self):
+        imputed = torch.save(self._save_path+"imputed.pt")
+        interpolated = torch.save(self._save_path+"interpolated.pt")
+        raw = torch.save(self._save_path+"raw.pt")
+        labels = torch.save(self._save_path+"labels.pt")
+        return imputed, interpolated, raw, labels
+
     def readData(self):
         X = []
         Y = []
@@ -1348,9 +1364,15 @@ class ExtraSensory(ISTS):
         timesteps = timesteps[ix].numpy()
         values = values[ix].numpy()
         y = labels[ix]
-            
+
         imputed, interpolated, raw = self.prepISTS(timesteps, values, self.nref)
         y = y.long()
+        
+        # Save tensors
+        torch.save(imputed, self._save_path+"imputed.pt")
+        torch.save(interpolated, self._save_path+"interpolated.pt")
+        torch.save(raw, self._save_path+"raw.pt")
+        torch.save(y, self._save_path+"labels.pt")
         return imputed, interpolated, raw, y
 
 class SeqLength(ISTS):

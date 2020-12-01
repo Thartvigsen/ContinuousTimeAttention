@@ -63,7 +63,7 @@ class MainWriter(object):
             #"""SeqLengthUniform(T=450, N=5000, nref=100)""",
             #"""SeqLengthUniform(T=500, N=5000, nref=100)""",
 
-            """ExtraSensory(label_name='label:BICYCLING', threshold=0.001, nref=200)""",
+            """ExtraSensory(label_name='label:BICYCLING', threshold=0.001, nref=500)""",
             #"""UWave2(nref=200)""",
 
             #"""MTable(T=500, N=5000, nref=500)""",
