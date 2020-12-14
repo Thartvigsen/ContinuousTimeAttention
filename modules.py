@@ -16,9 +16,11 @@ class Controller(nn.Module):
         nemb = 10
         self.fc1 = nn.Linear(ninp, nemb)
         self.fc2 = nn.Linear(nemb, 1)
+        self.dropout_layer = nn.Dropout(p=0.5)
         
     def forward(self, h_t):
         feat = torch.relu(self.fc1(h_t.squeeze(0)))
+        #feat = self.dropout_layer(feat)
         self.mu = torch.tanh(self.fc2(feat))
         distribution = Normal(self.mu, self.std)
         l_t = distribution.rsample()
@@ -381,6 +383,7 @@ class GN(nn.Module):
 
     def forward(self, x, l_t):
         v = x[1] # Just grab values
+        #v = v[:, :20]
 
         phi = self.Retina.foveate(v, l_t)
 

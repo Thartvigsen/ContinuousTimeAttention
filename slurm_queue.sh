@@ -5,4 +5,5 @@
 # in Cluster Head Node terminal, type: ./slurm_queue.sh
 ################################
 
-squeue -u $USER
+#squeue -u $USER
+squeue -o "%.18i %.9P %.8j %.8u %.2t %.10M %.6D %.8C %.10m %.11b %R" -u $USER

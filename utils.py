@@ -63,7 +63,7 @@ class MainWriter(object):
             #"""SeqLengthUniform(T=450, N=5000, nref=100)""",
             #"""SeqLengthUniform(T=500, N=5000, nref=100)""",
 
-            """ExtraSensory(label_name='label:BICYCLING', threshold=0.001, nref=500)""",
+            """ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, nref=500)""",
             #"""UWave2(nref=200)""",
 
             #"""MTable(T=500, N=5000, nref=500)""",
@@ -115,19 +115,24 @@ class MainWriter(object):
             #"""Interpolator(config, d.data_setting, adapter="gaussian", nref=140)""",
             #"""RNN_interp(config, d.data_setting, nref=500)""",
 
-            """RNNVals(config, d.data_setting)""",
-            """RNNValsGaps(config, d.data_setting)""",
+            #"""RNNVals(config, d.data_setting)""",
+            #"""RNNValsGaps(config, d.data_setting)""",
             """RNNInterp(config, d.data_setting, nref=500)""",
             """RNNSimple(config, d.data_setting)""",
             """RNN(config, d.data_setting)""",
             """RNNDelta(config, d.data_setting)""",
             """RNNDecay(config, d.data_setting)""",
-            #"""GRU_D(config, d.data_setting)""",
+            ##"""GRU_D(config, d.data_setting)""",
             """IPN(config, d.data_setting, nref=200)""",
             #"""CAT(config, d.data_setting, nhop=3, nsample=0.1, scaling_factor=10, explore=False, intensity=False)""",
-            """CAT(config, d.data_setting, nhop=3, nsample=0.05, scaling_factor=20, explore=False, intensity=False)""",
             """PolicyFreeCAT(config, d.data_setting, nhop=3, nsample=0.05, scaling_factor=20, explore=False, intensity=False)""",
-            """CAT(config, d.data_setting, nhop=3, nsample=0.05, scaling_factor=20, explore=True, intensity=False)""",
+
+            """CAT(config, d.data_setting, nhop=5, nsample=0.05, scaling_factor=20, explore=False, intensity=False)""",
+            """CAT(config, d.data_setting, nhop=5, nsample=0.05, scaling_factor=20, explore=True, intensity=False)""",
+#            """CAT(config, d.data_setting, nhop=3, nsample=0.1, scaling_factor=10, explore=False, intensity=False)""",
+#            """CAT(config, d.data_setting, nhop=3, nsample=0.1, scaling_factor=10, explore=True, intensity=False)""",
+#            """CAT(config, d.data_setting, nhop=3, nsample=0.2, scaling_factor=5, explore=False, intensity=False)""",
+#            """CAT(config, d.data_setting, nhop=3, nsample=0.2, scaling_factor=5, explore=True, intensity=False)""",
             #"""CAT(config, d.data_setting, nhop=3, nsample=0.1, scaling_factor=10, explore=False, intensity=True)""",
 
             #"""CAT(config, d.data_setting, nhop=3, nsample=10, explore=True, intensity=True)""",

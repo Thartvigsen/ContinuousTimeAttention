@@ -314,7 +314,7 @@ class RNNDecay(Model):
 
 class CAT(Model):
     def __init__(self, config, data_setting, nhop=3, intensity=True, ngran=2,
-                 nsample=0.2, scaling_factor=5, nemb=50, std=0.15, explore=False):
+                 nsample=0.2, scaling_factor=5, nemb=20, std=0.15, explore=False):
         super(CAT, self).__init__(config, data_setting)
         #self._T = data_setting["num_timesteps"]
         self.NAME = "CAT"

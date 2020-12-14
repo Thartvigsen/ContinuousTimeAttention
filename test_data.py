@@ -38,12 +38,13 @@ config = {
     },
 }
 
-d = InHospitalMortality()
-#d = MVSynth()
-M = CAT(config, d.data_setting, ngran=10)
-e = [Accuracy()]
-E = ExpConfig(d, M, e, config)
-E.run()
+d = ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, nref=500)
+
+##d = MVSynth()
+#M = CAT(config, d.data_setting, ngran=10)
+#e = [Accuracy()]
+#E = ExpConfig(d, M, e, config)
+#E.run()
 
 #loader = torch.utils.data.DataLoader(d, batch_size=16, drop_last=True)
 #for x, y in loader:

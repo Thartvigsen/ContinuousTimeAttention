@@ -34,6 +34,9 @@ class ExpConfig():
         self.metrics = e
         self.iter = iteration
 
+        # --- clean dataset depending on which model is running ---
+
+
         # --- unpack hyperparameters ---
         self.BATCH_SIZE = config["training"]["batch_size"]
         self.SCHEDULE_LR = config["training"]["use_scheduler"]
@@ -291,6 +294,7 @@ class ExpConfig():
         for e in range(self.N_EPOCHS):
             # Train model
             start = time.time()
+            self.model.train()
             self.runEpoch(model=self.model,
                           loader=self.train_loader,
                           mode="train",
@@ -300,6 +304,7 @@ class ExpConfig():
                           epoch=e)
 
             # Validate and Test model
+            self.model.eval()
             self.runEpoch(self.model, self.val_loader, "val")
 
             self.runEpoch(self.model, self.test_loader, "test")
@@ -338,16 +343,12 @@ class ExpConfig():
                 pass
                 #class_means.append(model.means)
 
-            #y_hat = torch.max(torch.softmax(logits, 1), 1)[1]
             y_hat = torch.softmax(logits, 1)
             [predictions.append(j) for j in y_hat.detach()]
-            #[predictions.append(j) for j in (y_hat.max(1)[1] == y).detach()]
-            #labels.append(y.detach())
             [labels.append(j) for j in y]
 
         if scheduler:
             scheduler.step()
-            #class_means = torch.stack(class_means).mean(0).detach().numpy()
 
         if not optimizer:
             pass

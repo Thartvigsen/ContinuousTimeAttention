@@ -1165,7 +1165,7 @@ class ISTS(Dataset):
     def __len__(self):
         return len(self.labels)
     
-    def getIntensity(self, t, r, alpha=0.001):
+    def getIntensity(self, t, r, alpha=100.):
         r = r.unsqueeze(1).repeat(1, t.shape[0]) # Add a column of all r values for each of t timesteps
         dist = torch.exp(torch.mul(-alpha, 1*torch.sub(r, t).pow(2)))    
         return dist.sum(1)/len(dist)
@@ -1179,7 +1179,9 @@ class ISTS(Dataset):
             new_v.append(f(new_r))
             lam.append(self.getIntensity(t[:, i], new_r))
         new_v = np.transpose(np.stack(new_v), (1, 0))
+        new_v[np.isnan(new_v)] = 0.0
         lam = np.transpose(np.stack(lam), (1, 0))
+        lam[np.isnan(lam)] = 0.0
         new_r = new_r.unsqueeze(1).repeat(1, self._N_FEATURES)
         return new_r, torch.tensor(new_v), lam
 
@@ -1222,13 +1224,17 @@ class ISTS(Dataset):
             val_means = np.stack(val_means).transpose(1, 0)
             timestep_means = np.stack(timestep_means).transpose(1, 0)
             deltas = np.round(np.stack(deltas).transpose(1, 0), 3)
-            masks = np.zeros_like(val_means)
-            masks[np.isnan(val_means)] = 1
-            val_means[np.isnan(val_means)] = np.nanmean(val_means)
+            mask = np.zeros_like(val_means)
+            mask[np.isnan(val_means)] = 1
+            val_means[np.isnan(val_means)] = 0.0
+            variable_means = np.nanmean(val_means, 0)[None, :] # Should be of shape N x T x V
+            val_means = variable_means*mask + val_means*(1-mask)
+            #val_means[np.isnan(val_means)] = np.nanmean(val_means)
+            #val_means = (val_means*(1-mask)).sum(1)
             val_means = torch.tensor(val_means, dtype=torch.float)
-            masks = torch.tensor(masks, dtype=torch.float)
+            mask = torch.tensor(mask, dtype=torch.float)
             deltas = torch.tensor(deltas, dtype=torch.float)/deltas.max()
-            imputed.append((val_means, masks, deltas))
+            imputed.append((val_means, mask, deltas))
         return imputed
 
     def prepISTS(self, timesteps, values, nref):
@@ -1245,8 +1251,232 @@ class ISTS(Dataset):
             raw.append((t, v, torch.tensor(len(t))))
         return imputed, interpolated, raw
 
-class ExtraSensory(ISTS):
+class ExtraSensoryUser(ISTS):
     def __init__(self, label_name, threshold, nsegments=20, nref=100, regen=False):
+        self.NAME = "ExtraSensoryUser_{}".format(label_name[6:])
+        super(ExtraSensoryUser, self).__init__(nref)
+        self._load_path = "../data/ES/raw/"
+        #self._load_path = "/home/tom/Documents/data/ES/raw/"
+        self._fnames = os.listdir(self._load_path)
+        self.threshold = threshold
+        self.nsegments = nsegments
+        self.width = 600
+        self._save_path = "../data/ES/processed_user/width-{}/thresh-{}/".format(self.width, self.threshold)
+        makedir(self._save_path)
+        self._label_name = label_name#[6:]
+        columns = pd.read_csv(os.path.join(self._load_path, self._fnames[0]), header=0).columns
+        self._label_indices = np.array(["label" in i for i in columns])#.astype(np.int32)
+        self._label_names = columns[self._label_indices]
+        self._label_col = np.where(self._label_names == label_name)[0]
+        self._acc_columns = ["raw_acc:3d:mean_x", "raw_acc:3d:mean_y", "raw_acc:3d:mean_z"]
+        self._gyro_columns = ["proc_gyro:3d:mean_x", "proc_gyro:3d:mean_y", "proc_gyro:3d:mean_z"]
+        self._N_FEATURES = 10
+        self.data_setting["N_FEATURES"] = self._N_FEATURES
+        self._imputed, self._interpolated, self._raw, self.labels, self.train_ix, self.val_ix, self.test_ix = self.loadSavedData()
+        if regen:
+        #if regen or not os.path.exists(self._load_path+"imputed.pt"):
+            self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+        else:
+            try: # try to load data
+                self._imputed, self._interpolated, self._raw, self.labels, self.train_ix, self.val_ix, self.test_ix = self.loadSavedData()
+                print("Loaded data")
+            except: # If that fails, still recreate the dataset
+                self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+        self.train_ix, self.val_ix, self.test_ix = self.balanceData(self.labels)
+        self.data_setting["N_CLASSES"] = len(torch.unique(self.labels))
+    
+    def balanceData(self, labels):
+        split_point = int(len(labels)*0.7)
+        train_ix = np.random.permutation(np.arange(0, split_point-self.width))
+        test_ix = np.random.permutation(np.arange(split_point, len(labels)))
+        train_pos = labels[train_ix].sum()
+        train_neg = len(train_ix) - train_pos
+        test_pos = labels[test_ix].sum()
+        test_neg = len(test_ix) - test_pos
+        #print(labels.sum()/float(len(labels)))
+        #print(train_pos, train_neg, test_pos, test_neg)
+        N_train = np.min([train_pos, train_neg])
+        N_test = np.min([test_pos, test_neg])
+        train_ix = np.random.choice(train_ix, N_train, replace=False)
+        val_ix = np.random.choice(test_ix, N_test, replace=False)
+        test_ix = np.random.choice(test_ix, N_test, replace=False)
+        return train_ix, test_ix, test_ix
+
+    #def balanceData(self, labels):
+    #    # Need to be balanced pos and neg in training and testing
+    #    train_ix = self.train_ix
+    #    test_ix = self.test_ix[:-int(self.width*2)]
+    #    train_pos = labels[train_ix].sum()
+    #    train_neg = len(train_ix) - train_pos
+    #    test_pos = labels[test_ix].sum()
+    #    test_neg = len(test_ix) - test_pos
+    #    N_train = np.min([train_pos, train_neg])
+    #    N_test = np.min([test_pos, test_neg])
+    #    train_ix = np.random.choice(train_ix, N_train, replace=False)
+    #    val_ix = np.random.choice(test_ix, N_test, replace=False)
+    #    test_ix = np.random.choice(test_ix, N_test, replace=False)
+    #    return train_ix, val_ix, test_ix
+
+    def loadSavedData(self):
+        imputed = torch.load(self._save_path+"imputed.pt")
+        for i in range(len(imputed)):
+            imputed[i] = list(imputed[i])
+            imputed[i][0] = imputed[i][0][:, :self._N_FEATURES]
+            imputed[i][1] = imputed[i][1][:, :self._N_FEATURES]
+            imputed[i][2] = imputed[i][2][:, :self._N_FEATURES]
+        interpolated = torch.load(self._save_path+"interpolated.pt")
+        for i in range(len(imputed)):
+            interpolated[i] = list(interpolated[i])
+            interpolated[i][0] = interpolated[i][0][:, :self._N_FEATURES]
+            interpolated[i][1] = interpolated[i][1][:, :self._N_FEATURES]
+            interpolated[i][2] = interpolated[i][2][:, :self._N_FEATURES]
+        for i in range(len(imputed)):
+            raw[i] = list(raw[i])
+            raw[i][0] = raw[i][0][:, :self._N_FEATURES]
+            raw[i][1] = raw[i][1][:, :self._N_FEATURES]
+        raw = torch.load(self._save_path+"raw.pt")
+        labels = torch.load(self._save_path+"labels.pt")
+        train_ix = np.load(self._save_path+"train_ix.npy")
+        val_ix = np.load(self._save_path+"val_ix.npy")
+        test_ix = np.load(self._save_path+"test_ix.npy")
+        return imputed, interpolated, raw, labels, train_ix, val_ix, test_ix
+
+    def readData(self):
+        max_y = -1
+        # Goal: Return the user with the most instances of the label_name (e.g., person who *walks* the most)
+        for f in self._fnames:
+            x = pd.read_csv(os.path.join(self._load_path, f), header=0)
+            acc_norm = np.linalg.norm(np.array(x[self._acc_columns]), ord=2, axis=1)
+            acc_diff = np.concatenate(([0], acc_norm[1:] - acc_norm[:-1]))
+            gyro_norm = np.linalg.norm(np.array(x[self._gyro_columns]), ord=2, axis=1)
+            gyro_diff = np.concatenate(([0], gyro_norm[1:] - gyro_norm[:-1]))
+            labels = np.array(x)[:, self._label_indices]
+            labels[np.isnan(labels)] = 0.0
+            #relevant_labels = self.getLabelIndex(labels, self._label_name, self._label_names)
+            #print("Number unique rows: {}".format(len(np.unique(labels, axis=0))))
+            num_unique = len(np.unique(labels, axis=0))
+            relevant_labels = labels[:, self._label_col]
+            new_y_sum = relevant_labels.sum()
+            #if new_y_sum > max_y:
+            if num_unique == 309:
+                max_y = new_y_sum
+                x_tmp = np.array(x)[:, ~self._label_indices]
+                x_tmp = x_tmp[:, :self._N_FEATURES+1]
+                x_tmp[:, 0] = x_tmp[:, 0]-x_tmp[:, 0].min() # Doesn't spread out gaps
+                x_tmp[:, 0] = x_tmp[:, 0]/x_tmp[:, 0].max() # Doesn't spread out gaps
+                #x_tmp[:, 0] = (x_tmp[:, 0] - x_tmp[:, 0].min())/(x_tmp[:, 0].max()-x_tmp[:, 0].min()) # Spreads out gaps
+                X = x_tmp
+                Y = relevant_labels
+                accs = acc_diff
+                gyros = gyro_diff
+        return X, Y, accs, gyros
+
+    def getLabelIndex(self, arr, name, label_names):
+        col_ix = label_names == name
+        return arr[:, col_ix] == 1
+
+    def getTimestepsValuesLabels(self, X, Y, label_name, label_names, accs, threshold):
+        label_ix = self.getLabelIndex(Y, label_name, label_names)
+        ix = np.abs(accs) > threshold
+        labels = label_ix[ix]
+        values = X[ix, 1:]
+        timesteps = X[ix, 0]
+        return timesteps, values, labels
+
+    def preprocess(self, timesteps, values, labels, nsegments):
+        bins = np.linspace(0, 1, nsegments+1)
+        new_t = []
+        new_v = []
+        new_y = []
+        for b in range(nsegments):
+            try:
+                lt_max = timesteps < bins[b+1]
+                gt_min = timesteps >= bins[b]
+                in_bin = gt_min & lt_max
+                new_t.append((timesteps[in_bin] - timesteps[in_bin].min())/(timesteps[in_bin].max()-timesteps[in_bin].min()))
+                new_v.append(values[in_bin])
+                new_y.append((labels[in_bin].sum() > 0).astype(np.int32))
+            except:
+                pass
+        return new_t, new_v, new_y
+
+    def createDataset(self, X, Y, label_name, label_names, accs, threshold, nsegments):
+        all_timesteps = []
+        all_values = []
+        all_labels = []
+        lengths = []
+        for i in range(len(X)):
+        #for i in range(2):
+            timesteps, values, labels = self.getTimestepsValuesLabels(X[i], Y[i], label_name, label_names, accs[i], threshold)
+            timesteps, values, labels = self.preprocess(timesteps, values, labels, nsegments)
+            [lengths.append(len(j)) for j in timesteps]
+            [all_timesteps.append(torch.tensor(j)) for j in timesteps]
+            [all_values.append(torch.tensor(j)) for j in values]
+            [all_labels.append(torch.tensor(j)) for j in labels]
+        all_timesteps = pad_sequence(all_timesteps, batch_first=True)[:, :500].unsqueeze(2)
+        all_values = pad_sequence(all_values, batch_first=True)[:, :500, :]
+        all_labels = torch.stack(all_labels)
+        lengths = np.array(lengths).clip(0, 500)
+        return all_timesteps, all_values, all_labels, lengths
+
+    def slidingWindow(self, arr, width):
+        window_ix = (
+            np.expand_dims(np.arange(width), 0) + np.expand_dims(np.arange(len(arr)-width+1), 0).T
+        )
+        return arr[window_ix]
+
+    def loadData(self):
+        X, Y, accs, gyros = self.readData()
+
+        # Now X is a numpy array and Y is a label vector
+        T = X.shape[0]
+        self.train_ix = np.arange(0, int(0.8*T))
+        self.test_ix = np.arange(int(0.8*T), T)
+        self.val_ix = np.arange(int(0.8*T), T)
+        X_train = self.slidingWindow(X[self.train_ix], self.width)
+        Y_train = self.slidingWindow(Y[self.train_ix], self.width)
+        accs_train = self.slidingWindow(accs[self.train_ix], self.width)
+        gyros_train = self.slidingWindow(gyros[self.train_ix], self.width)
+
+        X_test = self.slidingWindow(X[self.test_ix], self.width)
+        Y_test = self.slidingWindow(Y[self.test_ix], self.width)
+        accs_test = self.slidingWindow(accs[self.test_ix], self.width)
+        gyros_test = self.slidingWindow(gyros[self.test_ix], self.width)
+
+        X = np.concatenate((X_train, X_test))
+        Y = np.concatenate((Y_train, Y_test)).squeeze()
+        Y = torch.tensor(Y.sum(1).clip(0, 1))
+        accs = np.concatenate((accs_train, accs_test))
+        gyros = np.concatenate((gyros_train, gyros_test))
+        new_X = []
+        for i in range(len(X)):
+            new_X.append(torch.tensor(X[i, accs[i] > self.threshold, :]))
+        X = pad_sequence(new_X, batch_first=True)
+        X[torch.isnan(X)] = 0.0
+        Y[torch.isnan(Y)] = 0.0
+        print(X.shape)
+        print("Class balance: {}".format(Y.sum()/len(Y)))
+
+
+        timesteps = X[:, :, 0].unsqueeze(2)
+        timesteps = timesteps.repeat(1, 1, self._N_FEATURES).numpy()
+        values = X[:, :, 1:].numpy()
+
+        imputed, interpolated, raw = self.prepISTS(timesteps, values, self.nref)
+        y = Y.long()
+        
+        # Save tensors
+        torch.save(imputed, self._save_path+"imputed.pt")
+        torch.save(interpolated, self._save_path+"interpolated.pt")
+        torch.save(raw, self._save_path+"raw.pt")
+        torch.save(y, self._save_path+"labels.pt")
+        np.save(self._save_path+"train_ix.npy", self.train_ix)
+        np.save(self._save_path+"val_ix.npy", self.val_ix)
+        np.save(self._save_path+"test_ix.npy", self.test_ix)
+        return imputed, interpolated, raw, y
+
+class ExtraSensory(ISTS):
+    def __init__(self, label_name, threshold, nsegments=20, nref=100, regen=True):
         self.NAME = "ExtraSensory_{}".format(label_name[6:])
         super(ExtraSensory, self).__init__(nref)
         self._load_path = "../data/ES/raw/"
@@ -1263,21 +1493,24 @@ class ExtraSensory(ISTS):
         self._gyro_columns = ["proc_gyro:3d:mean_x", "proc_gyro:3d:mean_y", "proc_gyro:3d:mean_z"]
         self._N_FEATURES = 40
         self.data_setting["N_FEATURES"] = self._N_FEATURES
+        self._imputed, self._interpolated, self._raw, self.labels = self.loadSavedData()
         if regen:
         #if regen or not os.path.exists(self._load_path+"imputed.pt"):
             self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
         else:
             try: # try to load data
                 self._imputed, self._interpolated, self._raw, self.labels = self.loadSavedData()
+                print("Loaded data")
             except: # If that fails, still recreate the dataset
                 self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
         self.data_setting["N_CLASSES"] = len(torch.unique(self.labels))
+        assert 2 == 3
     
     def loadSavedData(self):
-        imputed = torch.save(self._save_path+"imputed.pt")
-        interpolated = torch.save(self._save_path+"interpolated.pt")
-        raw = torch.save(self._save_path+"raw.pt")
-        labels = torch.save(self._save_path+"labels.pt")
+        imputed = torch.load(self._save_path+"imputed.pt")
+        interpolated = torch.load(self._save_path+"interpolated.pt")
+        raw = torch.load(self._save_path+"raw.pt")
+        labels = torch.load(self._save_path+"labels.pt")
         return imputed, interpolated, raw, labels
 
     def readData(self):
