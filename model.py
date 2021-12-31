@@ -1,3 +1,4 @@
+from ncde import NeuralCDE
 import torch
 import math
 from torch import nn
@@ -7,10 +8,13 @@ from utils import *
 import numpy as np
 import time
 from torch.nn.utils.rnn import pad_sequence
+import torchcde
 
 class Model(nn.Module):
     def __init__(self, config, data_setting):
         super(Model, self).__init__()
+
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         # --- Model hyperparameters ---
         self._nepoch = config["training"]["n_epochs"]
@@ -39,6 +43,40 @@ class Model(nn.Module):
             labels = torch.argmax(labels, 1)
         return F.cross_entropy(logits, labels)
         
+class NCDE(Model):
+    def __init__(self, config, data_setting):
+        super(NCDE, self).__init__(config=config,
+                                  data_setting=data_setting)
+        self.NAME = "NCDEsmall"
+        self.ncde = NeuralCDE(input_channels=(self._ninp+1), hidden_channels=self.nhid, output_channels=self._nclasses)
+
+    def prepBatch(self, t, v):
+        # batch needs to be t concatenated with variables
+        batch = torch.cat((t[:, :, 0].unsqueeze(2), v), dim=2).to(self.device)
+        return batch
+
+    def forward(self, data, **kwargs):
+        t, v, lengths = data[2]
+        batch = self.prepBatch(t, v)
+        logits = self.ncde(batch).squeeze(-1)
+        return logits
+
+class Transformer(Model):
+    def __init__(self, config, data_setting):
+        super(Transformer, self).__init__(config=config,
+                                  data_setting=data_setting)
+        self.NAME = "Transformer"
+        self.transformer = torch.nn.Transformer(d_model=self._ninp, nhead=1, num_encoder_layers=2, dim_feedforward=self._ninp)
+        self.classifier = torch.nn.Linear(self._ninp, self._nclasses)
+
+    def forward(self, data, **kwargs):
+        t, x, l = data[1]
+        B, T, V = x.shape # Assume timesteps x batch x variables input
+        x = x.transpose(0, 1) # sequence first
+        z = self.transformer(x[:-1], x[1:])
+        logits = self.classifier(z[-1])
+        return logits
+
 class RNN(Model):
     def __init__(self, config, data_setting):
         super(RNN, self).__init__(config=config,
@@ -152,22 +190,23 @@ class RNNDelta(Model):
     def forward(self, data, **kwargs):
         # RNN takes in "imputed"
         x, m, d = data[0]
+        d[torch.isnan(d)] = 0 # Maybe a stupid assumption
         x = torch.cat((x, d), 2)
 
         B, T, V = x.shape # Assume timesteps x batch x variables input
         x = x.transpose(0, 1) # sequence first
-        self.reference_timesteps = torch.zeros(T)
+        #self.reference_timesteps = torch.zeros(T)
         hidden = self.initHidden(B)
         out, hidden = self.RNNCell(x, hidden)
         logits = self.predict(out[-1]).squeeze()
         return logits
 
 class RNNInterp(Model):
-    def __init__(self, config, data_setting, nref):
+    def __init__(self, config, data_setting):
         super(RNNInterp, self).__init__(config=config,
-                                  data_setting=data_setting)
+                                        data_setting=data_setting)
         self.NAME = "RNNInterp"
-        self.nref = nref
+        #self.nref = nref
 
         # --- Mappings ---
         self.RNNCell = nn.GRU(self._ninp, self.nhid, self.nlayers)
@@ -179,7 +218,7 @@ class RNNInterp(Model):
 
         B, T, V = x.shape # Assume timesteps x batch x variables input
         x = x.transpose(0, 1) # sequence first
-        x = x.reshape(-1, T//self.nref, B, V).mean(1)
+        #x = x.reshape(-1, T//self.nref, B, V).mean(1)
         self.reference_timesteps = torch.zeros(T)
         hidden = self.initHidden(B)
         out, hidden = self.RNNCell(x, hidden)
@@ -253,7 +292,9 @@ class GRU_D(Model):
         vals, masks, diffs = data[0]
         vals = vals.transpose(0, 1)
         masks = masks.transpose(0, 1)
+        masks = 1-masks
         diffs = diffs.transpose(0, 1)
+        diffs[torch.isnan(diffs)] = 0.0
         T, B, V = vals.shape
         self._x_mean = vals.mean(0) # Mean over timesteps (B x V)
         h = torch.zeros(B, self.nhid)
@@ -298,26 +339,30 @@ class RNNDecay(Model):
     
     def forward(self, data, **kwargs):
         vals, masks, diffs = data[0]
+        diffs[torch.isnan(diffs)] = 0.0 # Maybe a stupid assumption
         vals = vals.transpose(0, 1)
         masks = masks.transpose(0, 1)
         diffs = diffs.transpose(0, 1)
         T, B, V = vals.shape
         h = torch.zeros(B, self.nhid)
+        #start = time.time()
         for t in range(T):
             x = vals[t]#.unsqueeze(0)
             m = masks[t]#.unsqueeze(0)
             diff = diffs[t]#.unsqueeze(0)
             h = self.decayCell(x, h, m, diff)
+        #end = time.time()
+        #print("Batch took {} seconds".format(np.round((end-start)/60.), 3))
 
         logits = self.out(h.squeeze(0))
         return logits
 
-class CAT(Model):
+class CATMask(Model):
     def __init__(self, config, data_setting, nhop=3, intensity=True, ngran=2,
                  nsample=0.2, scaling_factor=5, nemb=20, std=0.15, explore=False):
-        super(CAT, self).__init__(config, data_setting)
+        super(CATMask, self).__init__(config, data_setting)
         #self._T = data_setting["num_timesteps"]
-        self.NAME = "CAT"
+        self.NAME = "CATMask"
         self.nhop = nhop # Number of steps to take
         self.ngranularity = ngran # How many levels of granularity
         self.nsample = nsample # Number of timesteps to collect around l_t
@@ -419,12 +464,121 @@ class CAT(Model):
         loss = self.loss_r + self.loss_c# + self.loss_b
         return loss
 
+class CAT(Model):
+    def __init__(self, config, data_setting, nhop=3, intensity=True, ngran=2,
+                 nsample=0.2, scaling_factor=5, nemb=20, std=0.15, explore=False):
+        super(CAT, self).__init__(config, data_setting)
+        #self._T = data_setting["num_timesteps"]
+        self.NAME = "CAT_kdd_nhop"
+        self.nhop = nhop # Number of steps to take
+        self.ngranularity = ngran # How many levels of granularity
+        self.nsample = nsample # Number of timesteps to collect around l_t
+        #self.gwidth = gwidth # How big steps should be in sensor
+        self.nemb = nemb # Dimensions into which to embed the [glimpse, location] info
+        self.scaling_factor = scaling_factor
+        self.std = std
+        self.explore = explore
+        self.intensity = intensity
+        self.epsilons = exponentialDecay(self._nepoch)
+        self._bsz = config["training"]["batch_size"]
+        
+        # --- Mappings ---
+        self.Controller = Controller(self.nhid, self.std)
+        self.BaselineNetwork = BaselineNetwork(self.nhid, 1)
+        self.GlimpseNetwork = GN(self._ninp, self.nemb, int(self.nsample*500), self.ngranularity, self.scaling_factor, self.intensity)
+        #self.GlimpseNetwork = MVGlimpseNetwork(self._ninp, self.nemb, self.ngranularity, self.nsample, self.gwidth)
+        self.RNN = torch.nn.GRU(self.nemb, self.nhid, self.nlayers)
+        self.predict = torch.nn.Linear(self.nhid, self._nclasses)
+
+    def denorm(self, T, l):
+        #return ((0.5*(l_t + 1.0))*T)
+        #return (T*0.5*(1.0+l_t)).long()
+        return (0.5*((l+1.0)*T)).long()
+
+    def forward(self, data, epoch, test):
+        # CAT takes in "interpolated"
+        #vals, masks, diffs = data[0]
+        data = data[1]
+        #diffs[torch.isnan(diffs)] = 0.0
+        t = data[0]
+        v = data[1]
+        B, T, V = v.shape
+        l = data[2]
+        v[torch.isnan(v)] = 0.0
+        #t_max = t[:, -1, :].squeeze()
+
+        if self.explore:
+            if test:
+                self.Controller.std = 0.05
+            else:
+                self.Controller.std = self.epsilons[epoch]
+ #               self.Controller.std = 0.3
+            
+        self.means = torch.zeros((self._nclasses, self.nhop)) # For saving class-wise means
+        baselines = [] # Predicted baselines
+        reference_timesteps = [] # Which classes to halt at each step
+        log_pi = [] # Log probability of chosen actions
+        glimpses = []
+        
+        # --- initial glimpse ---
+        loc = torch.ones(self._bsz, 1).uniform_(-1, 1)
+        loc.requires_grad = False
+        hidden = self.initHidden(self._bsz)
+        self.greps = []
+        for i in range(self.nhop+1):
+            reference_timesteps.append(self.denorm(T, loc.squeeze())/float(T))
+            out, hidden, log_probs, loc, b_t = self.CATCell(data, hidden, loc)
+            log_pi.append(log_probs)
+            baselines.append(b_t)
+            #glimpses.append(glimpse)
+            
+        #self.greps = torch.stack(self.greps).squeeze()
+        #self.glimpses = torch.stack(glimpses).squeeze().transpose(0, 1)[:, :-1] # B x R
+        self.reference_timesteps = torch.stack(reference_timesteps).squeeze().transpose(0, 1)[:, 1:] # B x R
+        self.baselines = torch.stack(baselines).squeeze().transpose(0, 1)[:, :-1] # B x R
+        self.log_pi = torch.stack(log_pi).squeeze().transpose(0, 1)[:, :-1] # B x R
+        logits = self.predict(out.squeeze())
+        return logits
+    
+    def CATCell(self, data, h_prev, l):
+        grep = self.GlimpseNetwork(data, l)
+        out, hidden = self.RNN(grep.unsqueeze(0), h_prev)
+        self.greps.append(out)
+        log_probs, l_next = self.Controller(out)
+        b_t = self.BaselineNetwork(out)
+        return out, hidden, log_probs, l_next, b_t#, grep
+    
+    def computeLoss(self, logits, y):
+        # --- save class-specific means ---
+        #for i in y.unique():
+        #    self.means[i] = self.glimpses[y == i].mean(0).unsqueeze(0)
+
+        # --- compute reward ---
+        predicted = torch.max(torch.softmax(logits, 1), 1)[1]
+        if len(y.shape) > 1:
+            y = torch.argmax(y, 1)
+#         self.r = (predicted.float().detach() == y.float()).float()
+        self.r = ((2*(predicted.float().detach() == y.float()).float())-1) # B x 1
+        self.R = self.r.mean()
+        self.r = self.r.unsqueeze(1).repeat(1, self.nhop) # B x nref
+        
+        self.loss_c = F.cross_entropy(logits, y)
+        self.loss_b = F.mse_loss(self.baselines, self.r)  # Baseline should approximate mean reward
+
+        self.adjusted_reward = self.r# - self.baselines.detach()
+        self.loss_r = torch.sum(-self.log_pi*self.adjusted_reward, 1) # sum over time
+        self.loss_r = 0.5*torch.mean(self.loss_r, 0) # mean over batch
+        
+        # --- putting it all together ---
+        loss = self.loss_r + self.loss_c# + self.loss_b
+        return loss
+
 class PolicyFreeCAT(Model):
     def __init__(self, config, data_setting, nhop=3, intensity=True, ngran=2,
                  nsample=0.2, scaling_factor=5, nemb=50, std=0.15, explore=False):
         super(PolicyFreeCAT, self).__init__(config, data_setting)
         #self._T = data_setting["num_timesteps"]
-        self.NAME = "PolicyFreeCAT"
+        self.NAME = "PolicyFreeCAT_TEST"
         self.nhop = nhop # Number of steps to take
         self.ngranularity = ngran # How many levels of granularity
         self.nsample = nsample # Number of timesteps to collect around l_t

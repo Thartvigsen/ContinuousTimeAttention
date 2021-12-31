@@ -34,9 +34,6 @@ class ExpConfig():
         self.metrics = e
         self.iter = iteration
 
-        # --- clean dataset depending on which model is running ---
-
-
         # --- unpack hyperparameters ---
         self.BATCH_SIZE = config["training"]["batch_size"]
         self.SCHEDULE_LR = config["training"]["use_scheduler"]
@@ -48,15 +45,13 @@ class ExpConfig():
         self.N_EPOCHS = config["training"]["n_epochs"]
         self.NUM_WORKERS = config["training"]["num_workers"]
         self.split_props = config["training"]["split_props"]
+        self.bootstrap = config["eval"]["bootstrap"]
 
         # --- CUDA ---
-        #if torch.cuda.is_available():
-        #    device = torch.device("cuda")
-        #else:
-        #    device = torch.device("cpu")
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        #self.model.setDevice(device)
-        #self.model = self.model.to(device)
+        self.model.setDevice(self.device)
+        self.model = self.model.to(self.device)
         #self.dataset.data = self.dataset.data.to(device)
         #self.dataset.labels = self.dataset.labels.to(device)
 
@@ -80,6 +75,7 @@ class ExpConfig():
         self.val_loader = loaders[1]
         self.test_loader = loaders[2]
 
+
         # --- resume training ---
         if self.resume:
             self.model = torch.load(self.LOG_PATH + "model.pt")
@@ -102,8 +98,8 @@ class ExpConfig():
         indices = range(self.N)
         split_points = [int(self.N*i) for i in self.split_props]
         train_ix = np.random.choice(indices,
-                                     split_points[0],
-                                     replace=False)
+                                    split_points[0],
+                                    replace=False)
         val_ix = np.random.choice((list(set(indices) - set(train_ix))),
                                    split_points[1],
                                    replace=False)
@@ -127,6 +123,21 @@ class ExpConfig():
                     np.save(self.dataset._load_path + "val_ix.npy", np.array(val_ix))
                     np.save(self.dataset._load_path + "test_ix.npy", np.array(test_ix))
         return train_ix, val_ix, test_ix
+
+    def getBootstrapLoaders(self, dataset):
+        loader_list = []
+        for _ in range(10):
+            ix = np.random.choice(self.test_ix, # test_ix was initialized in the original getLoaders() method
+                                  int(0.5*len(self.test_ix)),
+                                  replace=False)
+            sampler = SubsetRandomSampler(ix)
+            loader = data.DataLoader(dataset,
+                                     batch_size=self.BATCH_SIZE,
+                                     sampler=sampler,
+                                     drop_last=True,
+                                     num_workers=self.NUM_WORKERS)
+            loader_list.append(loader)
+        return loader_list
 
     def getLoaders(self, dataset):
         """define dataloaders"""
@@ -277,6 +288,7 @@ class ExpConfig():
             #row = ["Loss", "C Loss", "R Loss"]
             for metric in self.metrics: # Add metric names to csv headers
                 row.append(metric.name)
+            row.append("EpochTime")
 
             writeCSVRow(row, self.LOG_PATH + "train_results_{}".format(self.iter))
             writeCSVRow(row, self.LOG_PATH + "val_results_{}".format(self.iter))
@@ -303,80 +315,61 @@ class ExpConfig():
                           test=False,
                           epoch=e)
 
-            # Validate and Test model
-            self.model.eval()
-            self.runEpoch(self.model, self.val_loader, "val")
+            #print("Epoch {}/{} completed in {} minutes.".format(e+1, self.N_EPOCHS, np.round((end-start)/60., 3)))
+        #    # Validate and Test model
+        #    self.model.eval()
+        #    self.runEpoch(self.model, self.val_loader, "val")
 
+        # --- bootstrap ---
+        self.model.eval()
+        results = []
+        if self.bootstrap:
+            self.test_loader_list = self.getBootstrapLoaders(self.dataset)
+            for i, loader in enumerate(self.test_loader_list):
+                row = self.runEpoch(self.model, loader, "test", ix=i)
+                results.append(row)
+            accs = np.array(results)[:, 2]
+            acc_mean = np.mean(accs)
+            acc_std = np.std(accs)
+            writeCSVRow([acc_mean, acc_std], self.LOG_PATH+f"cv_results_{self.iter}")
+
+        else:
             self.runEpoch(self.model, self.test_loader, "test")
-            end = time.time()
-            print("Epoch {}/{} completed in {} minutes.".format(e+1, self.N_EPOCHS, np.round((end-start)/60., 3)))
 
-    def runEpoch(self, model, loader, mode, optimizer=None, scheduler=None, test=True, epoch=0):
+    def runEpoch(self, model, loader, mode, optimizer=None, scheduler=None, test=True, epoch=0, ix=None):
         """Given a data loader and model, run through the dataset once."""
         predictions = []
         labels = []
-        reference_timesteps = []
-        l = []
         total_loss = 0
-        total_loss_c = 0
-        total_loss_r = 0
-        correct = 0
-        count = 0
-        class_means = []
+        start = time.time()
         for i, (X, y) in enumerate(loader):
-            [l.append(j) for j in y]
             logits = model(X, epoch=epoch, test=test)
-            loss = model.computeLoss(logits, y)
+            loss = model.computeLoss(logits, y.to(self.device))
             total_loss += loss.item()
-            #total_loss_c += model.loss_c.item()
-            #total_loss_r += model.loss_r.item()
-            try:
-                reference_timesteps.append(model.reference_timesteps)
-            except:
-                pass
             if optimizer:
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                #class_means.append(model.means)
-            else:
-                pass
-                #class_means.append(model.means)
 
-            y_hat = torch.softmax(logits, 1)
+            y_hat = torch.softmax(logits, 1).cpu()
             [predictions.append(j) for j in y_hat.detach()]
-            [labels.append(j) for j in y]
+            [labels.append(j) for j in y.cpu()]
 
         if scheduler:
             scheduler.step()
 
-        if not optimizer:
-            pass
-            #class_means = torch.stack(class_means).mean(0).detach().numpy()
+        end = time.time()
         total_loss = total_loss/len(loader)
-        #total_loss_c = total_loss_c/len(loader)
-        #total_loss_r = total_loss_r/len(loader)
         predictions = torch.stack(predictions).squeeze().detach().numpy()#.astype(np.int32)#.transpose(0, 1)
-        #predictions = predictions.reshape(-1, 1).astype(np.int32)
-        #predictions = predictions.reshape(-1, predictions.shape[-1])
-        try:
-            reference_timesteps = torch.stack(reference_timesteps).squeeze().numpy()#.reshape(i+1, -1)
-            np.save(self.LOG_PATH+"{}_reference_timesteps_{}".format(mode, self.iter), reference_timesteps)
-        except:
-            pass
         labels = torch.stack(labels).squeeze().detach().numpy()
 
-        # ---log results ---
+        # --- logging ---
         row = [total_loss]
-        #row = [total_loss, total_loss_c, total_loss_r]
         metrics = self.computeMetrics(predictions, labels)
         [row.append(metric) for metric in metrics]
-        #print("Count Accuracy: {}".format(np.round(100.*correct/count, 3)))
-        #print("Metric Accuracy: {}".format(100*metrics[0]))
-        #row.append(np.round(100.*correct/count, 3))
-        writeCSVRow(row, self.LOG_PATH+"{}_results_{}".format(mode, self.iter), round=True)
-        #if not test:
-        #    try:
-        #        np.save(self.LOG_PATH+"class_means_{}".format(self.iter), class_means)
-        #    except:
-        #        pass
+        row.append(np.round((end-start)/60, 4))
+        if ix:
+            writeCSVRow(row, self.LOG_PATH+f"{mode}_results_{self.iter}_{ix}", round=True)
+        else:
+            writeCSVRow(row, self.LOG_PATH+f"{mode}_results_{self.iter}", round=True)
+        return row

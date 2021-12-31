@@ -52,87 +52,218 @@ class MainWriter(object):
             #"""MultiModalIrregularUCR('Computers', R=100)""",
             #"""MultiModalIrregularUCR('Computers', R=50)""",
 
-            #"""SeqLengthUniform(T=50, N=5000, nref=100)""",
-            #"""SeqLengthUniform(T=100, N=5000, nref=100)""",
-            #"""SeqLengthUniform(T=150, N=5000, nref=100)""",
-            #"""SeqLengthUniform(T=200, N=5000, nref=100)""",
-            #"""SeqLengthUniform(T=250, N=5000, nref=100)""",
-            #"""SeqLengthUniform(T=300, N=5000, nref=100)""",
-            #"""SeqLengthUniform(T=350, N=5000, nref=100)""",
-            #"""SeqLengthUniform(T=400, N=5000, nref=100)""",
-            #"""SeqLengthUniform(T=450, N=5000, nref=100)""",
-            #"""SeqLengthUniform(T=500, N=5000, nref=100)""",
+            #"""SeqLengthUniform(T=200, N=5000, nref=200, signal_prop=0.01)""",
+            #"""SeqLengthUniform(T=200, N=5000, nref=200, signal_prop=0.1)""",
+            #"""SeqLengthUniform(T=200, N=5000, nref=200, signal_prop=0.2)""",
+            #"""SeqLengthUniform(T=200, N=5000, nref=200, signal_prop=0.3)""",
+            #"""SeqLengthUniform(T=200, N=5000, nref=200, signal_prop=0.4)""",
+            #"""SeqLengthUniform(T=200, N=5000, nref=200, signal_prop=0.5)""",
 
-            """ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, nref=500)""",
+            # Looping over nref
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=200)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=25)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=50)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=100)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=150)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=200)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=250)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=300)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=350)""", # RERUN
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=400)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=450)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=500)""",
+
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.002, width=400, nref=100)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=400, nref=200)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=300)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.002, width=200, nref=100)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.002, width=200, nref=200)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.002, width=200, nref=300)""",
+            #"""UWave2(nref=20)""",
+            #"""UWave2(nref=40)""",
+            #"""UWave2(nref=60)""",
+            #"""UWave2(nref=80)""",
+            #"""UWave2(nref=100)""",
+            #"""UWave2(nref=120)""",
+            #"""UWave2(nref=140)""",
+            #"""UWave2(nref=160)""",
+            #"""UWave2(nref=180)""",
             #"""UWave2(nref=200)""",
 
-            #"""MTable(T=500, N=5000, nref=500)""",
-            #"""SyntheticValObs(T=500, N=5000, nref=500)""",
+            # HYPERPARAMS
+            #"""ExtraSensoryUser(label_name='label:SLEEPING', threshold=0.001, width=200, nref=200)""",
+            #"""ExtraSensoryUser(label_name='label:LYING_DOWN', threshold=0.001, width=200, nref=200)""",
+            #"""ExtraSensoryUser(label_name='label:SLEEPING', threshold=0.001, width=200, nref=500)""",
 
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=500)""",
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=490)""",
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=480)""",
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=470)""",
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=460)""",
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=450)""",
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=450)""",
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=400)""",
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=350)""",
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=300)""",
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=250)""",
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=200)""",
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=150)""",
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=100)""",
-            #"""MultiModalIrregularUCR('Computers', R=500, nmode_pos=500, nmode_neg=50)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=200)""", # RUN
+            #"""ExtraSensoryUser(label_name='label:FIX_running', threshold=0.001, width=200, nref=200)""",
+            #"""ExtraSensoryUser(label_name='label:SLEEPING', threshold=0.001, width=200, nref=200)""",
+            #"""ExtraSensoryUser(label_name='label:LYING_DOWN', threshold=0.001, width=200, nref=200)""",
+            #"""ExtraSensoryUser(label_name='label:LYING_DOWN', threshold=0.001, width=200, nref=500)""",
+            #"""ExtraSensoryUser(label_name='label:SLEEPING', threshold=0.001, width=200, nref=500)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_running', threshold=0.001, width=200, nref=500)""",
+            """ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=500)""", # RUN
 
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.05)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.1)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.15)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.2)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.25)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.3)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.35)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.4)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.45)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.5)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.55)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.6)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.65)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.7)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.75)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.8)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.85)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.9)""",
-            #"""MarkovIrregularUCR('Computers', p2n_pos=0.5, n2p_pos=0.5, p2n_neg=0.5, n2p_neg=0.95)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=300)""", # RUN
+            #"""ExtraSensoryUser(label_name='label:FIX_running', threshold=0.001, width=200, nref=300)""",
+            #"""ExtraSensoryUser(label_name='label:SLEEPING', threshold=0.001, width=200, nref=300)""",
+            #"""ExtraSensoryUser(label_name='label:LYING_DOWN', threshold=0.001, width=200, nref=300)""",
+            #"""ExtraSensoryUser(label_name='label:FIX_walking', threshold=0.001, width=200, nref=400)""", # RUN
+            #"""ExtraSensoryUser(label_name='label:FIX_running', threshold=0.001, width=200, nref=400)""",
+            #"""ExtraSensoryUser(label_name='label:SLEEPING', threshold=0.001, width=200, nref=400)""",
+            #"""ExtraSensoryUser(label_name='label:LYING_DOWN', threshold=0.001, width=200, nref=400)""",
+
+            #"""ExtraSensoryUser(label_name='label:SITTING', threshold=0.003, width=200, nref=200)""",
+            # BAD
+            #"""ExtraSensoryUser(label_name='label:SLEEPING', threshold=0.001, width=200, nref=200)""",
+            #"""ExtraSensoryUser(label_name='label:BICYCLING', threshold=0.002, width=200, nref=500)""", # STILL NEED TO RUN
+
+            #"""MTable(T=500, N=5000, delta=0.01, nref=500)""", # 1% of timeline
+            #"""MTable(T=500, N=5000, delta=0.02, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.03, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.04, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.05, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.06, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.07, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.08, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.09, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.1, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.11, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.12, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.13, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.14, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.15, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.16, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.17, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.18, nref=500)""",
+            #"""MTable(T=500, N=5000, delta=0.19, nref=500)""",
         ]
 
         #self.metrics = """[Accuracy()]"""
         self.metrics = """[Accuracy(), AUC_micro()]"""
 
         self.models = [
-            #"""Interpolator(config, d.data_setting, adapter="linear", nref=10)""",
-            #"""Interpolator(config, d.data_setting, adapter="linear", nref=140)""",
-            #"""Interpolator(config, d.data_setting, adapter="gaussian", nref=140)""",
-            #"""RNN_interp(config, d.data_setting, nref=500)""",
+            #"""RNN(config, d.data_setting)""", # RUN ALONE
+            #"""RNNInterp(config, d.data_setting)""",
+            #"""RNNSimple(config, d.data_setting)""",
+            #"""RNN(config, d.data_setting)""",
+            #"""RNNDelta(config, d.data_setting)""",
+            #"""RNNDecay(config, d.data_setting)""",
+            #"""GRU_D(config, d.data_setting)""",
+            #"""IPN(config, d.data_setting, nref=200)""",
+            #"""IPN(config, d.data_setting, nref=500)""",
 
-            #"""RNNVals(config, d.data_setting)""",
-            #"""RNNValsGaps(config, d.data_setting)""",
-            """RNNInterp(config, d.data_setting, nref=500)""",
-            """RNNSimple(config, d.data_setting)""",
-            """RNN(config, d.data_setting)""",
-            """RNNDelta(config, d.data_setting)""",
-            """RNNDecay(config, d.data_setting)""",
-            ##"""GRU_D(config, d.data_setting)""",
-            """IPN(config, d.data_setting, nref=200)""",
+            #"""IPN(config, d.data_setting, nref=20)""",
+            #"""IPN(config, d.data_setting, nref=40)""",
+            #"""IPN(config, d.data_setting, nref=60)""",
+            #"""IPN(config, d.data_setting, nref=80)""",
+            #"""IPN(config, d.data_setting, nref=100)""",
+            #"""IPN(config, d.data_setting, nref=120)""",
+            #"""IPN(config, d.data_setting, nref=140)""",
+            #"""IPN(config, d.data_setting, nref=160)""",
+            #"""IPN(config, d.data_setting, nref=180)""",
+
+
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.01, scaling_factor=100, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.02, scaling_factor=50, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.04, scaling_factor=25, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.06, scaling_factor=16, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.08, scaling_factor=12, explore=False, intensity=False)""",
             #"""CAT(config, d.data_setting, nhop=3, nsample=0.1, scaling_factor=10, explore=False, intensity=False)""",
-            """PolicyFreeCAT(config, d.data_setting, nhop=3, nsample=0.05, scaling_factor=20, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.12, scaling_factor=8, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.14, scaling_factor=7, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.16, scaling_factor=6, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.18, scaling_factor=5, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.2, scaling_factor=5, explore=False, intensity=False)""",
 
-            """CAT(config, d.data_setting, nhop=5, nsample=0.05, scaling_factor=20, explore=False, intensity=False)""",
-            """CAT(config, d.data_setting, nhop=5, nsample=0.05, scaling_factor=20, explore=True, intensity=False)""",
-#            """CAT(config, d.data_setting, nhop=3, nsample=0.1, scaling_factor=10, explore=False, intensity=False)""",
-#            """CAT(config, d.data_setting, nhop=3, nsample=0.1, scaling_factor=10, explore=True, intensity=False)""",
-#            """CAT(config, d.data_setting, nhop=3, nsample=0.2, scaling_factor=5, explore=False, intensity=False)""",
-#            """CAT(config, d.data_setting, nhop=3, nsample=0.2, scaling_factor=5, explore=True, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.22, scaling_factor=4, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.24, scaling_factor=4, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.26, scaling_factor=3, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.28, scaling_factor=3, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.30, scaling_factor=3, explore=False, intensity=False)""",
+
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.32, scaling_factor=3, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.34, scaling_factor=3, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.36, scaling_factor=2, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.38, scaling_factor=2, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.40, scaling_factor=2, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.42, scaling_factor=2, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.44, scaling_factor=2, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.46, scaling_factor=2, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.48, scaling_factor=2, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.50, scaling_factor=2, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.52, scaling_factor=1, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.54, scaling_factor=1, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.56, scaling_factor=1, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.58, scaling_factor=1, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.60, scaling_factor=1, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.62, scaling_factor=1, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.64, scaling_factor=1, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.66, scaling_factor=1, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.68, scaling_factor=1, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.70, scaling_factor=1, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.72, scaling_factor=1, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.74, scaling_factor=1, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.76, scaling_factor=1, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.78, scaling_factor=1, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.80, scaling_factor=1, explore=False, intensity=False)""",
+
+            """PolicyFreeCAT(config, d.data_setting, nhop=1, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=False)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=2, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=False)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=3, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=False)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=4, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=False)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=5, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=False)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=6, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=False)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=7, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=False)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=8, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=False)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=9, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=False)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=10, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=False)""",
+
+            """PolicyFreeCAT(config, d.data_setting, nhop=1, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=2, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=3, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=4, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=5, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=6, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=7, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=8, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=9, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            """PolicyFreeCAT(config, d.data_setting, nhop=10, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+
+            #"""CAT(config, d.data_setting, nhop=1, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=2, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=4, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=5, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=6, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=7, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=8, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=9, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=10, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+
+            #"""CATMask(config, d.data_setting, nhop=3, nsample=0.10, scaling_factor=10, explore=False, intensity=False)""",
+            #"""CATMask(config, d.data_setting, nhop=3, nsample=0.10, scaling_factor=10, explore=False, intensity=True)""",
+
+            # START
+            #"""CAT(config, d.data_setting, nhop=2, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=2, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=2, nsample=0.1, nemb=50, scaling_factor=10, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=2, nsample=0.1, nemb=50, scaling_factor=10, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=2, nsample=0.2, nemb=50, scaling_factor=5, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=2, nsample=0.2, nemb=50, scaling_factor=5, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=2, nsample=0.5, nemb=50, scaling_factor=2, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=2, nsample=0.5, nemb=50, scaling_factor=2, explore=False, intensity=True)""",
+
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.05, nemb=50, scaling_factor=20, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.1, nemb=50, scaling_factor=10, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.1, nemb=50, scaling_factor=10, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.2, nemb=50, scaling_factor=5, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.2, nemb=50, scaling_factor=5, explore=False, intensity=True)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.5, nemb=50, scaling_factor=2, explore=False, intensity=False)""",
+            #"""CAT(config, d.data_setting, nhop=3, nsample=0.5, nemb=50, scaling_factor=2, explore=False, intensity=True)""",
+            # STOP
+
             #"""CAT(config, d.data_setting, nhop=3, nsample=0.1, scaling_factor=10, explore=False, intensity=True)""",
 
             #"""CAT(config, d.data_setting, nhop=3, nsample=10, explore=True, intensity=True)""",
@@ -142,6 +273,8 @@ class MainWriter(object):
             #"""CAT(config, d.data_setting, nhop=3, nsample=20, explore=True, intensity=False)""",
             #"""CAT(config, d.data_setting, nhop=3, nsample=20, scaling_factor=3, explore=False, intensity=False)""",
             #"""PolicyFree(config, d.data_setting, nref=10)""",
+            #"""NCDE(config, d.data_setting)""",
+            #"""Transformer(config, d.data_setting)""",
         ]
 
         self.n_iterations = 5
@@ -234,9 +367,9 @@ class RegularGridInterpolator:
 
 def attrToString(obj, prefix,
                 exclude_list=["NAME", "name", "desc", "training", "bsz", "intensities",
-                              "test_ix", "train_ix", "values", "timesteps",
+                              "test_ix", "train_ix", "values", "timesteps", "signal_length",
                               "deltas", "masks", "epsilons", "val_ix", "r",
-                              "M", "t0", "stop", "delta", "table",
+                              "M", "t0", "stop", "table",
                               "device", "lengths", "ids", "values", "masks",
                               "timesteps", "signal_start", "signal_end",
                               "data", "labels", "signal_locs", "round",
@@ -259,7 +392,7 @@ def attrToString(obj, prefix,
             out_dir += "/{}-{}".format(k, ",".join([str(i) for i in v]) if type(v) == list else v)
     return out_dir
 
-def writeCSVRow(row, name, path="./", round=False):
+def writeCSVRow(row, name, path="./", round=True):
     """
     Given a row, rely on the filename variable to write
     a new row of experimental results into a log file
@@ -279,8 +412,8 @@ def writeCSVRow(row, name, path="./", round=False):
 
     if round:
         row = [np.round(i, 2) for i in row]
-    f = path + name + ".csv"
-    with open(f, "a+") as csvfile:
+    path = os.path.join(path, name)
+    with open(f"{path}.csv", "a+") as csvfile:
         filewriter = csv.writer(csvfile, delimiter=",")
         filewriter.writerow(row)
 

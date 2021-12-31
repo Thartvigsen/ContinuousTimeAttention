@@ -42,6 +42,7 @@ class Dataset(data.Dataset):
         self.data_setting["VAR_LEN"] = False
         self.data_setting["N_FEATURES"] = 1 # Write over this in new dataset
         self.data_setting["N_CLASSES"] = 2 # Write over this in new dataset
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # --- DATA LOADING -------------------------------------------------------
     def loadData(self, path, regen=False):
@@ -111,8 +112,8 @@ class Dataset(data.Dataset):
         y : torch.LongTensor()
             The label associated with the selected example.
         """
-        X = self.data[idx]
-        y = self.labels[idx]
+        X = self.data[idx].to(self.device)
+        y = self.labels[idx].to(self.device)
         return X, y#, idx
 
     # ------------------------------------------------------------------------
@@ -1121,8 +1122,7 @@ class Computers(IrregularTimeSeries):
 #                else:
 #                    curr_val = 0
 #                deltas.append(curr_val)
-#            deltas = np.round(np.array(deltas), 3)
-#            val_means[np.isnan(val_means)] = np.nanmean(val_means)
+#            deltas = np.round(np.array(deltas), 3) #            val_means[np.isnan(val_means)] = np.nanmean(val_means)
 #            val_means = torch.tensor(val_means, dtype=torch.float)
 #            masks = torch.tensor(masks, dtype=torch.float)
 #            deltas = torch.tensor(deltas, dtype=torch.float)
@@ -1161,10 +1161,10 @@ class ISTS(Dataset):
 
     def __getitem__(self, ix): 
         return (self._imputed[ix], self._interpolated[ix], self._raw[ix]), self.labels[ix]
-    
+
     def __len__(self):
         return len(self.labels)
-    
+
     def getIntensity(self, t, r, alpha=100.):
         r = r.unsqueeze(1).repeat(1, t.shape[0]) # Add a column of all r values for each of t timesteps
         dist = torch.exp(torch.mul(-alpha, 1*torch.sub(r, t).pow(2)))    
@@ -1176,8 +1176,10 @@ class ISTS(Dataset):
         lam = [] 
         for i in range(self._N_FEATURES):
             f = interpolate.interp1d(t[:, i], v[:, i], fill_value=(v[:, i][0], v[:, i][-1]), bounds_error=False)
-            new_v.append(f(new_r))
-            lam.append(self.getIntensity(t[:, i], new_r))
+            nv = f(new_r)
+            new_v.append(nv)
+            l = self.getIntensity(t[:, i], new_r)
+            lam.append(l)
         new_v = np.transpose(np.stack(new_v), (1, 0))
         new_v[np.isnan(new_v)] = 0.0
         lam = np.transpose(np.stack(lam), (1, 0))
@@ -1193,6 +1195,8 @@ class ISTS(Dataset):
             t, v, lam = self.resample(torch.tensor(t, dtype=torch.float),
                                       torch.tensor(v, dtype=torch.float),
                                       nref)
+            #print(lam)
+            #assert 2 == 3
             interpolated.append((t, v, lam))
         return interpolated
 
@@ -1242,7 +1246,7 @@ class ISTS(Dataset):
         imputed = self.valMaskPad(timesteps, values, nref)
 
         # Interpolated
-        interpolated = self.irregularize(timesteps, values, nref=500) # For CAT
+        interpolated = self.irregularize(timesteps, values, nref=self.nref) # For CAT -- typically 500
 
         raw = []
         for i in range(len(timesteps)):
@@ -1252,38 +1256,71 @@ class ISTS(Dataset):
         return imputed, interpolated, raw
 
 class ExtraSensoryUser(ISTS):
-    def __init__(self, label_name, threshold, nsegments=20, nref=100, regen=False):
-        self.NAME = "ExtraSensoryUser_{}".format(label_name[6:])
+    def __init__(self, label_name, threshold, nsegments=20, nref=100, width=200, regen=False):
+        self.NAME = "ExtraSensoryUser_{}_final".format(label_name[6:])
         super(ExtraSensoryUser, self).__init__(nref)
         self._load_path = "../data/ES/raw/"
         #self._load_path = "/home/tom/Documents/data/ES/raw/"
         self._fnames = os.listdir(self._load_path)
         self.threshold = threshold
         self.nsegments = nsegments
-        self.width = 600
-        self._save_path = "../data/ES/processed_user/width-{}/thresh-{}/".format(self.width, self.threshold)
+        self.width = width
+        self._save_path = "../data/ES/processed_user/label-{}/nref-{}/width-{}/thresh-{}/".format(label_name[6:], nref, self.width, self.threshold)
         makedir(self._save_path)
         self._label_name = label_name#[6:]
         columns = pd.read_csv(os.path.join(self._load_path, self._fnames[0]), header=0).columns
-        self._label_indices = np.array(["label" in i for i in columns])#.astype(np.int32)
-        self._label_names = columns[self._label_indices]
+        self._label_names = columns[-52:]
         self._label_col = np.where(self._label_names == label_name)[0]
         self._acc_columns = ["raw_acc:3d:mean_x", "raw_acc:3d:mean_y", "raw_acc:3d:mean_z"]
+        self._col_ix = np.array([np.where(columns == i)[0] for i in self._acc_columns]).squeeze()
         self._gyro_columns = ["proc_gyro:3d:mean_x", "proc_gyro:3d:mean_y", "proc_gyro:3d:mean_z"]
-        self._N_FEATURES = 10
-        self.data_setting["N_FEATURES"] = self._N_FEATURES
-        self._imputed, self._interpolated, self._raw, self.labels, self.train_ix, self.val_ix, self.test_ix = self.loadSavedData()
+        self._N_FEATURES = 30
+        #self._imputed, self._interpolated, self._raw, self.labels, self.train_ix, self.val_ix, self.test_ix = self.loadSavedData()
         if regen:
         #if regen or not os.path.exists(self._load_path+"imputed.pt"):
+            print("Regenerating dataset")
             self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
         else:
             try: # try to load data
                 self._imputed, self._interpolated, self._raw, self.labels, self.train_ix, self.val_ix, self.test_ix = self.loadSavedData()
                 print("Loaded data")
             except: # If that fails, still recreate the dataset
+                print("Regenerating dataset")
                 self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
         self.train_ix, self.val_ix, self.test_ix = self.balanceData(self.labels)
         self.data_setting["N_CLASSES"] = len(torch.unique(self.labels))
+        self._N_FEATURES = 3
+        self.data_setting["N_FEATURES"] = self._N_FEATURES
+
+        # Extract only the correct columnns
+        try:
+            for i in range(len(self._imputed)):
+                self._imputed[i] = list(self._imputed[i])
+                self._imputed[i][0] = self._imputed[i][0][:, self._col_ix]
+                self._imputed[i][1] = self._imputed[i][1][:, self._col_ix]
+                self._imputed[i][2] = self._imputed[i][2][:, self._col_ix]
+            for i in range(len(self._imputed)):
+                self._interpolated[i] = list(self._interpolated[i])
+                self._interpolated[i][0] = self._interpolated[i][0][:, self._col_ix]
+                self._interpolated[i][1] = self._interpolated[i][1][:, self._col_ix]
+                self._interpolated[i][2] = self._interpolated[i][2][:, self._col_ix]
+            count = 0
+            for i in range(len(self._imputed)):
+                self._raw[i] = list(self._raw[i])
+                self._raw[i][0] = self._raw[i][0][:, self._col_ix]
+                self._raw[i][1] = self._raw[i][1][:, self._col_ix]
+                count += self._raw[i][2]
+        except:
+            pass
+
+        torch.save(self._imputed, self._save_path+"imputed.pt")
+        torch.save(self._interpolated, self._save_path+"interpolated.pt")
+        torch.save(self._raw, self._save_path+"raw.pt")
+        torch.save(self.labels, self._save_path+"labels.pt")
+        np.save(self._save_path+"train_ix.npy", self.train_ix)
+        np.save(self._save_path+"val_ix.npy", self.val_ix)
+        np.save(self._save_path+"test_ix.npy", self.test_ix)
+        #assert 2 == 3
     
     def balanceData(self, labels):
         split_point = int(len(labels)*0.7)
@@ -1293,14 +1330,31 @@ class ExtraSensoryUser(ISTS):
         train_neg = len(train_ix) - train_pos
         test_pos = labels[test_ix].sum()
         test_neg = len(test_ix) - test_pos
-        #print(labels.sum()/float(len(labels)))
-        #print(train_pos, train_neg, test_pos, test_neg)
+
         N_train = np.min([train_pos, train_neg])
         N_test = np.min([test_pos, test_neg])
-        train_ix = np.random.choice(train_ix, N_train, replace=False)
-        val_ix = np.random.choice(test_ix, N_test, replace=False)
-        test_ix = np.random.choice(test_ix, N_test, replace=False)
-        return train_ix, test_ix, test_ix
+
+        train_pos_ix = np.array(list(set(list(train_ix)).intersection(set(np.where(labels == 1.0)[0])))) # Get positive train instance
+        train_pos_ix = np.random.choice(train_pos_ix, N_train, replace=False)
+        train_neg_ix = np.array(list(set(list(train_ix)).intersection(set(np.where(labels == 0.0)[0])))) # Get negative train instance
+        train_neg_ix = np.random.choice(train_neg_ix, N_train, replace=False)
+
+        test_pos_ix = np.array(list(set(list(test_ix)).intersection(set(np.where(labels == 1.0)[0]))))
+        test_pos_ix = np.random.choice(test_pos_ix, N_test, replace=False)
+        test_neg_ix = np.array(list(set(list(test_ix)).intersection(set(np.where(labels == 0.0)[0]))))
+        test_neg_ix = np.random.choice(test_neg_ix, N_test, replace=False)
+
+        train_all_ix = np.concatenate((train_pos_ix, train_neg_ix))
+        #train_all_ix = np.random.permutation(np.concatenate((train_pos_ix, train_neg_ix)))
+        test_all_ix = np.random.permutation(np.concatenate((test_pos_ix, test_neg_ix)))
+        print("{} training instances.".format(len(train_all_ix)))
+        print("{} testing instances.".format(len(test_all_ix)))
+        train_labels = np.array([labels[i] for i in train_all_ix])
+        test_labels = np.array([labels[i] for i in test_all_ix])
+        print(train_labels.sum()/float(len(train_labels)))
+        print(test_labels.sum()/float(len(test_labels)))
+        #return train_ix, test_ix, test_ix
+        return train_all_ix, test_all_ix, test_all_ix
 
     #def balanceData(self, labels):
     #    # Need to be balanced pos and neg in training and testing
@@ -1319,22 +1373,25 @@ class ExtraSensoryUser(ISTS):
 
     def loadSavedData(self):
         imputed = torch.load(self._save_path+"imputed.pt")
-        for i in range(len(imputed)):
-            imputed[i] = list(imputed[i])
-            imputed[i][0] = imputed[i][0][:, :self._N_FEATURES]
-            imputed[i][1] = imputed[i][1][:, :self._N_FEATURES]
-            imputed[i][2] = imputed[i][2][:, :self._N_FEATURES]
         interpolated = torch.load(self._save_path+"interpolated.pt")
-        for i in range(len(imputed)):
-            interpolated[i] = list(interpolated[i])
-            interpolated[i][0] = interpolated[i][0][:, :self._N_FEATURES]
-            interpolated[i][1] = interpolated[i][1][:, :self._N_FEATURES]
-            interpolated[i][2] = interpolated[i][2][:, :self._N_FEATURES]
-        for i in range(len(imputed)):
-            raw[i] = list(raw[i])
-            raw[i][0] = raw[i][0][:, :self._N_FEATURES]
-            raw[i][1] = raw[i][1][:, :self._N_FEATURES]
         raw = torch.load(self._save_path+"raw.pt")
+        #try: # if saved data don't have proper dimensions
+        #for i in range(len(imputed)):
+        #    imputed[i] = list(imputed[i])
+        #    imputed[i][0] = imputed[i][0][:, self._col_ix]
+        #    imputed[i][1] = imputed[i][1][:, self._col_ix]
+        #    imputed[i][2] = imputed[i][2][:, self._col_ix]
+        #for i in range(len(imputed)):
+        #    interpolated[i] = list(interpolated[i])
+        #    interpolated[i][0] = interpolated[i][0][:, self._col_ix]
+        #    interpolated[i][1] = interpolated[i][1][:, self._col_ix]
+        #    interpolated[i][2] = interpolated[i][2][:, self._col_ix]
+        #for i in range(len(imputed)):
+        #    raw[i] = list(raw[i])
+        #    raw[i][0] = raw[i][0][:, self._col_ix]
+        #    raw[i][1] = raw[i][1][:, self._col_ix]
+        #except:
+        #    print("Did not use col_ix")
         labels = torch.load(self._save_path+"labels.pt")
         train_ix = np.load(self._save_path+"train_ix.npy")
         val_ix = np.load(self._save_path+"val_ix.npy")
@@ -1350,22 +1407,25 @@ class ExtraSensoryUser(ISTS):
             acc_diff = np.concatenate(([0], acc_norm[1:] - acc_norm[:-1]))
             gyro_norm = np.linalg.norm(np.array(x[self._gyro_columns]), ord=2, axis=1)
             gyro_diff = np.concatenate(([0], gyro_norm[1:] - gyro_norm[:-1]))
-            labels = np.array(x)[:, self._label_indices]
+            labels = np.array(x)[:, -52:]
             labels[np.isnan(labels)] = 0.0
             #relevant_labels = self.getLabelIndex(labels, self._label_name, self._label_names)
             #print("Number unique rows: {}".format(len(np.unique(labels, axis=0))))
             num_unique = len(np.unique(labels, axis=0))
             relevant_labels = labels[:, self._label_col]
             new_y_sum = relevant_labels.sum()
-            #if new_y_sum > max_y:
-            if num_unique == 309:
+            if new_y_sum > max_y:
+            #if num_unique == 309:
                 max_y = new_y_sum
-                x_tmp = np.array(x)[:, ~self._label_indices]
+                x_tmp = np.array(x)[:, :-52]
                 x_tmp = x_tmp[:, :self._N_FEATURES+1]
-                x_tmp[:, 0] = x_tmp[:, 0]-x_tmp[:, 0].min() # Doesn't spread out gaps
-                x_tmp[:, 0] = x_tmp[:, 0]/x_tmp[:, 0].max() # Doesn't spread out gaps
+                x_tmp[np.isnan(x_tmp)] = 0.0
+                #x_tmp[:, 0] = x_tmp[:, 0]-x_tmp[:, 0].min() # Doesn't spread out gaps
+                #x_tmp[:, 0] = x_tmp[:, 0]/x_tmp[:, 0].max() # Doesn't spread out gaps
                 #x_tmp[:, 0] = (x_tmp[:, 0] - x_tmp[:, 0].min())/(x_tmp[:, 0].max()-x_tmp[:, 0].min()) # Spreads out gaps
+                x_tmp[:, 1:] = (x_tmp[:, 1:] - x_tmp[:, 1:].mean(0)[None, :])/x_tmp[:, 1:].std(0)[None, :]
                 X = x_tmp
+                X[np.isnan(X)] = 0.0
                 Y = relevant_labels
                 accs = acc_diff
                 gyros = gyro_diff
@@ -1444,6 +1504,10 @@ class ExtraSensoryUser(ISTS):
         gyros_test = self.slidingWindow(gyros[self.test_ix], self.width)
 
         X = np.concatenate((X_train, X_test))
+        # Normalize timesteps
+        X[:, :, 0] = X[:, :, 0]-X[:, :, 0].min(1)[:, None] # Doesn't spread out gaps
+        X[:, :, 0] = X[:, :, 0]/X[:, :, 0].max(1)[:, None] # Doesn't spread out gaps
+
         Y = np.concatenate((Y_train, Y_test)).squeeze()
         Y = torch.tensor(Y.sum(1).clip(0, 1))
         accs = np.concatenate((accs_train, accs_test))
@@ -1609,19 +1673,40 @@ class ExtraSensory(ISTS):
         return imputed, interpolated, raw, y
 
 class SeqLength(ISTS):
-    def __init__(self, T, N, nref):
+    def __init__(self, T, N, nref, signal_prop, regen=True):
         self.T = T
         self._N = N
         super(SeqLength, self).__init__(nref)
         self._load_path = self._data_path + "SeqLength/{}/".format(self.NAME)
         self._tmax = 1.
-        self.signal_prop = 0.1 # Proportion of timesteps taken by signal
+        self.signal_prop = signal_prop # Proportion of timesteps taken by signal
         self.signal_length = self._tmax*self.signal_prop
         self.nsamples_on_signal = 20
         self.signal_start = np.random.uniform(0, self._tmax-self.signal_length, self._N)
         #self.signal_start = np.ones(self.N)*0.4
+        self._N_FEATURES = 1
         self.signal_end = self.signal_start + self.signal_length
+        self._save_path = "../data/SeqLength/T-{}/signal_prop-{}/".format(T, signal_prop)
+        makedir(self._save_path)
+
         self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+        if regen:
+            print("Regenerating dataset")
+            self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+        else:
+            try: # try to load data
+                self._imputed, self._interpolated, self._raw, self.labels, self.train_ix, self.val_ix, self.test_ix = self.loadSavedData()
+                print("Loaded data")
+            except: # If that fails, still recreate the dataset
+                print("Regenerating dataset")
+                self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+
+    def loadSavedData(self):
+        imputed = torch.load(self._save_path+"imputed.pt")
+        interpolated = torch.load(self._save_path+"interpolated.pt")
+        raw = torch.load(self._save_path+"raw.pt")
+        labels = torch.load(self._save_path+"labels.pt")
+        return imputed, interpolated, raw, labels#, train_ix, val_ix, test_ix
 
     def dome(self, t):
         """A dome defined in [0, 1]"""
@@ -1672,6 +1757,8 @@ class SeqLength(ISTS):
 
     def loadData(self):
         t, v, y = self.getTimestepsValuesLabels()
+        t = np.expand_dims(t, 2)
+        v = np.expand_dims(v, 2)
 
         # Shuffle
         ix = np.random.choice(self._N, self._N, replace=False)
@@ -1682,12 +1769,16 @@ class SeqLength(ISTS):
         # Make irregular
         imputed, interpolated, raw = self.prepISTS(t, v, self.nref)
         y = torch.tensor(y, dtype=torch.long)
+        torch.save(imputed, self._save_path+"imputed.pt")
+        torch.save(interpolated, self._save_path+"interpolated.pt")
+        torch.save(raw, self._save_path+"raw.pt")
+        torch.save(y, self._save_path+"labels.pt")
         return imputed, interpolated, raw, y
 
 class SeqLengthUniform(SeqLength):
-    def __init__(self, T=50, N=500, nref=50):
+    def __init__(self, T=50, N=500, nref=50, signal_prop=0.1):
         self.NAME = "SyntheticSeqLengthUniform_all"
-        super(SeqLengthUniform, self).__init__(T=T, N=N, nref=nref)
+        super(SeqLengthUniform, self).__init__(T=T, N=N, nref=nref, signal_prop=signal_prop)
 
     # First, I want to get timesteps THIS way
     def getTimesteps(self, signal_start, signal_end):
@@ -1824,29 +1915,50 @@ class SyntheticValObs(ValObs):
         return np.sort(np.clip(timesteps, 0, 1))
 
 class MTable(ISTS):
-    def __init__(self, T=50, N=500, nref=500):
+    def __init__(self, T=50, N=500, delta=0.015, nref=500, regen=False):
         #self.nref = 500
         self.T = T
         self.N = N
-        self.NAME = "MTable2"
+        self.NAME = "MTable6"
         super(MTable, self).__init__(nref=nref)
-        self.M = np.array([1, 0, 1])
+        self.M = np.array([1, 0.5, 1])
         self.table = np.array([1, 1, 1])
-        self.delta = 0.015
-        self.t0 = np.random.uniform(0, 1-2*self.delta, self.N)
+        self.delta = delta
+        self._tmax = 1
+        self.t0 = np.random.uniform(0, self._tmax-2*self.delta, self.N)
         self.stop = self.t0 + 2*self.delta
+        self._N_FEATURES = 1
+        self._save_path = "../data/MTable/nref-{}/".format(nref)
+        makedir(self._save_path)
         #self.timesteps, self.values, self.labels = self.generateData()
-        self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+        #self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+        if regen:
+            print("Regenerating dataset")
+            self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+        else:
+            try: # try to load data
+                self._imputed, self._interpolated, self._raw, self.labels, self.train_ix, self.val_ix, self.test_ix = self.loadSavedData()
+                print("Loaded data")
+            except: # If that fails, still recreate the dataset
+                print("Regenerating dataset")
+                self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
+
+    def loadSavedData(self):
+        imputed = torch.load(self._save_path+"imputed.pt")
+        interpolated = torch.load(self._save_path+"interpolated.pt")
+        raw = torch.load(self._save_path+"raw.pt")
+        labels = torch.load(self._save_path+"labels.pt")
+        return imputed, interpolated, raw, labels, train_ix, val_ix, test_ix
 
     def createSignal(self, t0, v):
         timesteps = np.array([t0, t0+self.delta, t0+2*self.delta])[:, None]
-        values = np.concatenate((v, np.random.normal(0, 1, size=(self.T-3))))
+        values = np.concatenate((v, np.random.normal(0, 2, size=(self.T-3))))
         #values = np.concatenate((v, np.zeros(self.T-3)))
         n_from_left = np.random.choice(self.T-3, 1).astype(np.int32)
-        n_from_left = ((self.T*t0)).astype(np.int32)
+        n_from_left = ((self.T*(t0/self._tmax))).astype(np.int32)
         n_from_right = (self.T-3) - n_from_left
         left_samples = np.random.uniform(0, t0, (n_from_left))[:, None]
-        right_samples = np.random.uniform(t0+2*self.delta, 1.0, (n_from_right))[:, None]
+        right_samples = np.random.uniform(t0+2*self.delta, self._tmax, (n_from_right))[:, None]
         timesteps = np.concatenate((timesteps, left_samples, right_samples), 0)
         sorted_ix = np.argsort(timesteps, 0).squeeze()
         timesteps = timesteps[sorted_ix]
@@ -1871,8 +1983,8 @@ class MTable(ISTS):
 
     def loadData(self):
         t, v, y = self.getTimestepsValuesLabels()
-        #t = np.expand_dims(t, 2)
-        #v = np.expand_dims(v, 2)
+        t = np.expand_dims(t, 2)
+        v = np.expand_dims(v, 2)
         #t = 10.*t # Scale timesteps up
 
         # Shuffle
@@ -1884,6 +1996,13 @@ class MTable(ISTS):
         # Make irregular
         imputed, interpolated, raw = self.prepISTS(t, v, self.nref)
         y = torch.tensor(y, dtype=torch.long)
+        torch.save(imputed, self._save_path+"imputed.pt")
+        torch.save(interpolated, self._save_path+"interpolated.pt")
+        torch.save(raw, self._save_path+"raw.pt")
+        torch.save(y, self._save_path+"labels.pt")
+        #np.save(self._save_path+"train_ix.npy", self.train_ix)
+        #np.save(self._save_path+"val_ix.npy", self.val_ix)
+        #np.save(self._save_path+"test_ix.npy", self.test_ix)
         return imputed, interpolated, raw, y
 
 class MTableUniform(MTable):
@@ -1912,6 +2031,7 @@ class UWave2(ISTS):
         self.data_setting["N_FEATURES"] = 1
         self.data_setting["N_CLASSES"] = 8
         self.data_setting["num_timesteps"] = 94
+        self._N_FEATURES = 1
         self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
     
     def loadData(self):
@@ -1931,6 +2051,8 @@ class UWave2(ISTS):
         timesteps = np.concatenate((x_train, x_test), 0)#.unsqueeze(2)
         values = np.concatenate((y_train, y_test), 0)#.unsqueeze(2)
         labels = np.concatenate((l_train, l_test), 0)
+        timesteps = np.expand_dims(timesteps, 2)
+        values = np.expand_dims(values, 2)
 
         imputed, interpolated, raw = self.prepISTS(timesteps, values, self.nref)
         y = torch.tensor(labels, dtype=torch.long)
@@ -1965,32 +2087,38 @@ class PersonActivity2(ISTS):
 class PhysioNet2(ISTS):
     def __init__(self):
         self.NAME = "PhysioNet2"
-        super(PhysioNet2, self).__init__()
+        super(PhysioNet2, self).__init__(nref=100)
         self._load_path = "/home/twhartvigsen/data/PhysioNet/processed/"
         makedir(self._load_path)
         self._good_vars = [3, 4, 5, 9, 14, 17, 22, 24, 28, 29, 30, 31]
         self._N_FEATURES = len(self._good_vars)
         #self.ids, self.timesteps, self.values, self.masks, self.labels, self.lengths = self.loadData()
         self._imputed, self._interpolated, self._raw, self.labels = self.loadData()
-        self.timesteps = self.timesteps.unsqueeze(2).repeat(1, 1, self._N_FEATURES)
-        self.data = torch.stack([self.timesteps, self.values])
+        #self.timesteps = self.timesteps#.unsqueeze(2).repeat(1, 1, self._N_FEATURES)
+        #self.data = torch.stack([self.timesteps, self.values])
+        torch.save(self._imputed, "./data/PhysioNet/physionet_imputed.pt")
+        torch.save(self._raw, "./data/PhysioNet/physionet_raw.pt")
         #torch.save(self.timesteps, "./data/PhysioNet/physionet_timesteps.pt")
         #torch.save(self.values, "./data/PhysioNet/physionet_values.pt")
-        #torch.save(self.labels, "./data/PhysioNet/physionet_labels.pt")
+        torch.save(self.labels, "./data/PhysioNet/physionet_labels.pt")
         #torch.save(self.masks, "./data/PhysioNet/physionet_masks.pt")
         #torch.save(self.diffs, "./data/PhysioNet/physionet_diffs.pt")
+        assert 2 == 3
         self.data_setting["N_FEATURES"] = self._N_FEATURES
         self.data_setting["N_CLASSES"] = len(torch.unique(self.labels))
     
     def loadData(self):
         set_a = torch.load(self._load_path + "set-a_0.016.pt")
         max_a = self.getMaxLength(set_a)
-        max_length = max(max_a, max_b)
-        ids, timestamps, values, masks, labels, lengths = self.gatherData(set, max_length)
+        #max_length = max(max_a, max_b)
+        max_length = max_a
+        ids, timesteps, values, masks, labels, lengths = self.gatherData(set_a, max_length)
         ix = np.random.choice(len(ids), len(ids), replace=False)
-        values = values[all_ix]
-        timesteps = timesteps[all_ix]
-        labels = labels[all_ix]
+        values = values[ix].numpy()
+        self._N_FEATURES = values.shape[2]
+        timesteps = timesteps[ix].unsqueeze(2).repeat(1, 1, self._N_FEATURES).numpy()
+        #print(values.shape)
+        labels = labels[ix].numpy()
 
         imputed, interpolated, raw = self.prepISTS(timesteps, values, self.nref)
         y = torch.tensor(labels, dtype=torch.long)

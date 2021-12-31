@@ -375,29 +375,37 @@ class GN(nn.Module):
             self.fc1 = nn.Linear(npatches*size*ninp, nhid)
             self.fc2 = nn.Linear(1, nhid)
             self.fc3 = nn.Linear(npatches*size*ninp, nhid)
-            self.fc4 = nn.Linear(nhid*3, nhid)
+            self.fc4 = nn.Linear(nhid*2 + 1, nhid)
         else:
             self.fc1 = nn.Linear(npatches*size*ninp, nhid)
+            #self.fc1 = nn.Linear(npatches*size*ninp*2, nhid)
             self.fc2 = nn.Linear(1, nhid)
-            self.fc4 = nn.Linear(nhid*2, nhid)
+            self.fc4 = nn.Linear(nhid + 1, nhid)
 
     def forward(self, x, l_t):
         v = x[1] # Just grab values
+        #v = x[0] # Just grab values
+        #m = x[1] # Just grab values
         #v = v[:, :20]
 
         phi = self.Retina.foveate(v, l_t)
+        
+        #m_phi = self.Retina.foveate(m, l_t)
+
+        #phi = torch.cat((v_phi, m_phi), dim=1)
 
         # revisit
         phi_out = F.relu(self.fc1(phi))
-        l_out = F.relu(self.fc2(l_t))
+        #l_out = F.tanh(self.fc2(l_t))
 
         if self.intensity:
             intensity = x[2]
             i_rep = self.Retina.foveate(intensity, l_t)
+            i_rep = 10.*i_rep # Scale up the intensity values
             i_out = F.relu(self.fc3(i_rep))
-            g_t = F.relu(self.fc4(torch.cat((phi_out, l_out, i_out), 1)))
+            g_t = F.relu(self.fc4(torch.cat((phi_out, l_t, i_out), 1)))
         else:
-            g_t = F.relu(self.fc4(torch.cat((phi_out, l_out), 1)))
+            g_t = F.relu(self.fc4(torch.cat((phi_out, l_t), 1)))
         return g_t
 
 class GlimpseNetwork(nn.Module):
